@@ -94,9 +94,10 @@ You must specify some settings for your model in `models.conf`:
   * pos_classes - optionally, you may specify a mapping of POS tags to collapsed POS tags in the lexicon, in order to reduce sparseness (especially if the tag set is big but training data is small). See below for format.
 
 Example `models.conf` file for Hebrew and Coptic:
+
 ```
 [heb]
-base_letters=בגדהוזחטיכלמנסעפצקרשתןםךףץ'-%
+base_letters=אבגדהוזחטיכלמנסעפצקרשתןםךףץ'-%"
 vowels=אהוי
 
 [cop]
