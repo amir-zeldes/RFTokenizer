@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import sys, os, io, random
+import sys, os, io, random, re
 import numpy as np
 import pandas as pd
 if __name__ == "__main__":
@@ -98,6 +98,7 @@ class RFTokenizer:
 		self.model = model
 		self.lang = os.path.basename(model).replace(".sm2","").replace(".sm3","")
 		self.conf = {}
+		self.regex_tok = None
 		self.short_pos = {}
 		self.pos_lookup = defaultdict(lambda: "_")
 		self.conf["base_letters"] = set()
@@ -125,6 +126,15 @@ class RFTokenizer:
 						target, sources = mapping.strip().split("<-")
 						for source in sources.split("|"):
 							self.short_pos[source] = target
+			elif key == "regex_tok":
+				self.regex_tok = []
+				items = val.strip().split("\n")
+				for regex in items:
+					if "\t" in regex:
+						f, r = regex.strip().split("\t")
+						self.regex_tok.append((re.compile(f),r))
+					else:
+						sys.stderr.write("WARN: regex entry without tab in models.conf\n")
 		self.letters = defaultdict(lambda : self.conf["base_letters"])
 
 	def load(self, model_path=None):
@@ -363,11 +373,8 @@ class RFTokenizer:
 			print("o Test proportion is 0%, skipping evaluation")
 
 		if dump:
-			if PY3:
-				joblib.dump((forest_clf, num_labels, cat_labels, encoder, preparation_pipeline, pos_lookup), self.lang + ".sm3", compress=3)
-			else:
-				joblib.dump((forest_clf, num_labels, cat_labels, encoder, preparation_pipeline, pos_lookup), self.lang + ".sm2", compress=3)
-			print("o Dumped trained model to " + self.lang + ".sm3")
+			joblib.dump((forest_clf, num_labels, cat_labels, encoder, preparation_pipeline, pos_lookup), self.lang + ".sm" + str(sys.version_info[0]), compress=3)
+			print("o Dumped trained model to " + self.lang + ".sm" + str(sys.version_info[0]))
 
 
 	def rf_tokenize(self, data, sep="|", indices=None):
@@ -395,6 +402,8 @@ class RFTokenizer:
 
 		tokenizer, num_labels, cat_labels, encoder, preparation_pipeline = self.tokenizer, self.num_labels, self.cat_labels, self.encoder, self.preparation_pipeline
 
+		do_not_tok_indices = set()
+
 		if indices is not None:
 			if len(indices) == 0:
 				return []
@@ -412,6 +421,7 @@ class RFTokenizer:
 
 		letter_config = LetterConfig(letters, self.conf["vowels"], self.pos_lookup)
 
+		j = 0
 		for i, word in enumerate(data):
 			if indices is not None:
 				if i not in indices:
@@ -426,6 +436,12 @@ class RFTokenizer:
 				next_group = "_"
 			if len(word) == 0:
 				word = "_"
+
+			if self.regex_tok is not None:
+				for f, r in self.regex_tok:
+					if f.match(word) is not None:
+						do_not_tok_indices.add(j)
+			j += 1
 
 			encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,lang=self.lang)
 			encoded_groups += encoded_group
@@ -451,6 +467,12 @@ class RFTokenizer:
 				tokenized = ""
 			else:
 				for idx, bit in enumerate(segmentation):
+					if word_idx in do_not_tok_indices:
+						word = data[word_idx][idx]
+						for f, r in self.regex_tok:
+							word = f.sub(r,word)
+						tokenized += word
+						continue
 					if PY3:
 						tokenized += data[word_idx][idx]
 					else:
