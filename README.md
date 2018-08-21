@@ -11,7 +11,7 @@ Segmentation is based on character-wise binary classification: each character is
 
 To cite this tool, please refer to the following paper:
 
-Zeldes, Amir (2018) A CharacterwiseWindowed Approach to Hebrew Morphological Segmentation. In: *Proceedings of the 15th SIGMORPHON Workshop on Computational Research in Phonetics, Phonology, and Morphology*. Brussels, Belgium.
+Zeldes, Amir (2018) A Characterwise Windowed Approach to Hebrew Morphological Segmentation. In: *Proceedings of the 15th SIGMORPHON Workshop on Computational Research in Phonetics, Phonology, and Morphology*. Brussels, Belgium.
 
 ```
 @InProceedings{,
