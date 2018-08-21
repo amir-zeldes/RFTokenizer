@@ -17,7 +17,13 @@ class LetterConfig:
 			self.vowels = set()
 			self.pos_lookup = defaultdict(lambda: "_")
 		else:
-			self.letters = letters
+			letter_cats = ["current_letter", "prev_prev_letter", "prev_letter", "next_letter", "next_next_letter", "prev_grp_first", "prev_grp_last", "next_grp_first", "next_grp_last"]
+			self.letters = defaultdict(set)
+			if "group_in_lex" in letters or "current_letter" in letters:  # Letters dictionary already instantiated - we are loading from disk
+				self.letters.update(letters)
+			else:
+				for cat in letter_cats:
+					self.letters[cat] = letters
 			self.vowels = vowels
 			self.pos_lookup = pos_lookup
 
@@ -152,7 +158,7 @@ class MultiColumnLabelEncoder(LabelEncoder):
 
 
 #@profile
-def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None, lang="cop", train=False):
+def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None, train=False, freqs=None):
 
 	output = []
 
@@ -246,6 +252,15 @@ def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp
 			if print_headers:
 				headers += ["next_grp_first","next_grp_last","next_grp_len","next_grp_pos"]
 
+		headers += ["freq_ratio"]
+		if freqs is None:
+			char_feats += [0.0]
+		else:
+			f_sofar = freqs[so_far_substr]
+			f_remain = freqs[remaining_substr]
+			f_whole = freqs[bound_group] + 0.0000000001  # Delta smooth whole
+			char_feats += [f_sofar*f_remain/f_whole]
+
 		if grp_id > -1:
 			char_feats += [grp_id]
 			if print_headers:
@@ -255,7 +270,11 @@ def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp
 			if print_headers:
 				headers += ["is_test"]
 
+		char_feats += [bound_group,prev_group,next_group]
+		headers += ["this_group","prev_group","next_group"]
+
 		output.append(char_feats)
+
 
 	if print_headers:
 		return headers
