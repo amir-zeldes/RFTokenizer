@@ -23,7 +23,9 @@ Zeldes, Amir (2018) A CharacterwiseWindowed Approach to Hebrew Morphological Seg
 }
 ```
 
-The data provided for the Hebrew segmentation experiment in this paper is derived from the Universal Dependencies version of the Hebrew Treebank, which is made available under a CC BY-NC-SA 4.0 license, but using the earlier splits from the 2014 SPMRL shared task. For attribution information for the Hebrew Treebank, see: https://github.com/UniversalDependencies/UD_Hebrew-HTB
+The data provided for the Hebrew segmentation experiment in this paper, given in the data/ directory, is derived from the Universal Dependencies version of the Hebrew Treebank, which is made available under a CC BY-NC-SA 4.0 license, but using the earlier splits from the 2014 SPMRL shared task. For attribution information for the Hebrew Treebank, see: https://github.com/UniversalDependencies/UD_Hebrew-HTB
+
+The out-of-domain Wikipedia dataset from the paper, called Wiki5K and available in the data/ directory, is available under the same terms as Wikipedia.
 
 ## Requirements
 
@@ -171,7 +173,7 @@ The frequency file is a tab delimited text file with one word form per line and 
   * You can specify a train/test split proportion using e.g. `-p 0.2` (default test partition is 0.1 of the data)
   * Variable importances can be outputted using `-i`
   * You can perform retraining on the entire dataset after evaluation of feature importances using `-r`
-  * You can ablate certain features using -a and a comma separated list of feautres
+  * You can ablate certain features using `-a` and a comma separated list of feautres
 
 If you want to test different classifiers/hyperparameters, there is some cross-validation code in the train() routine (look for `cross_val_test`).
 
