@@ -3,9 +3,14 @@ A character-wise tokenizer for morphologically rich languages
 
 For replication of paper results see replication.md
 
+For full NLP pipelines for morphologically rich languages (MRLs) based on this tool, see:
+
+  * Coptic: http://www.github.com/CopticScriptorium/coptic-nlp/
+  * Hebrew: http://www.github.com/amir-zeldes/HebPipe/
+
 ## Introduction
 
-This is a simple tokenizer for word-internal segmentation in languages such as Hebrew or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
+This is a simple tokenizer for word-internal segmentation in morphologically rich languages such as Hebrew, Coptic or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
 
 Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 100K examples of word forms to segment), and works out of the box with fairly simple dependencies (see Requirements).
 
@@ -23,9 +28,9 @@ Zeldes, Amir (2018) A Characterwise Windowed Approach to Hebrew Morphological Se
 }
 ```
 
-The data provided for the Hebrew segmentation experiment in this paper, given in the data/ directory, is derived from the Universal Dependencies version of the Hebrew Treebank, which is made available under a CC BY-NC-SA 4.0 license, but using the earlier splits from the 2014 SPMRL shared task. For attribution information for the Hebrew Treebank, see: https://github.com/UniversalDependencies/UD_Hebrew-HTB
+The data provided for the Hebrew segmentation experiment in this paper, given in the data/ directory, is derived from the Universal Dependencies version of the Hebrew Treebank, which is made available under a CC BY-NC-SA 4.0 license, but using the earlier splits from the 2014 SPMRL shared task. For attribution information for the Hebrew Treebank, see: https://github.com/UniversalDependencies/UD_Hebrew-HTB . The out-of-domain Wikipedia dataset from the paper, called Wiki5K and available in the data/ directory, is available under the same terms as Wikipedia.
 
-The out-of-domain Wikipedia dataset from the paper, called Wiki5K and available in the data/ directory, is available under the same terms as Wikipedia.
+Coptic data is derived from Coptic Scriptorium corpora, see more information at http://www.copticscriptorium.org/
 
 ## Requirements
 
@@ -41,7 +46,7 @@ Compatible with Python 2 or 3, but compiled models must be specific to Python 2 
 To use the tokenizer, include the model file (e.g. `heb.sm3`) in the tokenizer's directory, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
 
 ```
-> python tokenizer_rf.py -m heb some_file.txt > some_file_segmented.txt
+> python tokenizer_rf.py -m heb example_in.txt > example_out.txt
 ```
 
 Input file format:
@@ -55,6 +60,7 @@ Input file format:
 ```
 
 Output format:
+
 ```
 עשרות
 אנשים
