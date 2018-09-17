@@ -1,5 +1,16 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+
+"""
+RFTokenizer - Automatic segmentation of complex word forms
+for Morphologically Rich Languages (MRLs)
+"""
+
+__version__ = "0.9.0"
+__author__ = "Amir Zeldes"
+__copyright__ = "Copyright 2018, Amir Zeldes"
+__license__ = "Apache 2.0"
+
 import sys, os, io, random, re
 import numpy as np
 import pandas as pd
@@ -21,8 +32,10 @@ except ImportError:
 PY3 = sys.version_info[0] == 3
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
+
 def lambda_underscore():  # Module level named lambda-function to make defaultdict picklable
 	return "_"
+
 
 class FloatProportion(object):
 	def __init__(self, start, end):
@@ -30,6 +43,7 @@ class FloatProportion(object):
 		self.end = end
 	def __eq__(self, other):
 		return self.start <= other <= self.end
+
 
 def read_lex(short_pos, lex_file):
 	"""
@@ -650,7 +664,12 @@ if __name__ == "__main__":
 	parser.add_argument("-e","--errors",action="store_true",help="Whether to output errors during training evaluation to errs.txt")
 	parser.add_argument("-r","--retrain_all",action="store_true",help="re-run training on entire dataset (train+test) after testing")
 	parser.add_argument("-a","--ablations",action="store",default=None,help="comma separated feature names to ablate in experiments")
+	parser.add_argument("-v","--version",action="store_true",help="Print version number and quit")
 	parser.add_argument("file",action="store",help="file to tokenize or train on")
+
+	if "-v" in sys.argv or "--version" in sys.argv:
+		print("RFTokenizer V" + __version__)
+		sys.exit()
 
 	options = parser.parse_args()
 
