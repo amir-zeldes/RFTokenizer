@@ -1,28 +1,27 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+
 """
 RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "0.9.0"
+__version__ = "1.0.0"
 __author__ = "Amir Zeldes"
-__copyright__ = "Copyright 2018, Amir Zeldes"
+__copyright__ = "Copyright 2018-2019, Amir Zeldes"
 __license__ = "Apache 2.0"
+
 
 import sys, os, io, random, re
 import numpy as np
 import pandas as pd
 
-if __name__ == "__main__":
-	from preprocess import LetterConfig
-else:
-	from .preprocess import LetterConfig
-from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.externals import joblib
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import LabelEncoder
 from collections import defaultdict
 try:
 	from ConfigParser import RawConfigParser as configparser
@@ -32,9 +31,15 @@ except ImportError:
 PY3 = sys.version_info[0] == 3
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
+cat_labels = ['group_in_lex', 'current_letter', 'prev_prev_letter', 'prev_letter', 'next_letter', 'next_next_letter',
+			  'mns4_coarse', 'mns3_coarse', 'mns2_coarse',
+			  'mns1_coarse', 'pls1_coarse', 'pls2_coarse',
+			  'pls3_coarse', 'pls4_coarse', "so_far_pos", "remaining_pos", "prev_grp_pos", "next_grp_pos",
+			  "remaining_pos_mns1", "remaining_pos_mns2",
+			  "prev_grp_first", "prev_grp_last", "next_grp_first", "next_grp_last"]
 
-def lambda_underscore():  # Module level named lambda-function to make defaultdict picklable
-	return "_"
+num_labels = ['idx', 'len_bound_group', "current_vowel", "prev_prev_vowel", "prev_vowel", "next_vowel",
+			  "next_next_vowel", "prev_grp_len", "next_grp_len", "freq_ratio"]
 
 
 class FloatProportion(object):
@@ -43,6 +48,312 @@ class FloatProportion(object):
 		self.end = end
 	def __eq__(self, other):
 		return self.start <= other <= self.end
+
+class LetterConfig:
+	def __init__(self,letters=None, vowels=None, pos_lookup=None):
+
+		if letters is None:
+			self.letters = defaultdict(set)
+			self.vowels = set()
+			self.pos_lookup = defaultdict(lambda: "_")
+		else:
+			letter_cats = ["current_letter", "prev_prev_letter", "prev_letter", "next_letter", "next_next_letter", "prev_grp_first", "prev_grp_last", "next_grp_first", "next_grp_last"]
+			self.letters = defaultdict(set)
+			if "group_in_lex" in letters or "current_letter" in letters:  # Letters dictionary already instantiated - we are loading from disk
+				self.letters.update(letters)
+			else:
+				for cat in letter_cats:
+					self.letters[cat] = letters
+			self.vowels = vowels
+			self.pos_lookup = defaultdict(lambda: "_")
+			self.pos_lookup.update(pos_lookup)
+
+
+def multicol_fit_transform(dframe, columns):
+
+	if isinstance(columns, list):
+		columns = np.array(columns)
+	else:
+		columns = columns
+
+	encoder_dict = {}
+	# columns are provided, iterate through and get `classes_`
+	# ndarray to hold LabelEncoder().classes_ for each
+	# column; should match the shape of specified `columns`
+	all_classes_ = np.ndarray(shape=columns.shape, dtype=object)
+	all_encoders_ = np.ndarray(shape=columns.shape, dtype=object)
+	all_labels_ = np.ndarray(shape=columns.shape, dtype=object)
+	for idx, column in enumerate(columns):
+		# instantiate LabelEncoder
+		le = LabelEncoder()
+		# fit and transform labels in the column
+		dframe.loc[:, column] = le.fit_transform(dframe.loc[:, column].values)
+		encoder_dict[column] = le
+		# append the `classes_` to our ndarray container
+		all_classes_[idx] = (column, np.array(le.classes_.tolist(), dtype=object))
+		all_encoders_[idx] = le
+		all_labels_[idx] = le
+
+	multicol_dict = {"encoder_dict":encoder_dict, "all_classes_":all_classes_,"all_encoders_":all_encoders_,"columns": columns}
+	return dframe, multicol_dict
+
+
+def hyper_optimize(data_x,data_y,val_x=None,val_y=None,cat_labels=None,space=None,max_evals=20):
+	from hyperopt import tpe, hp, space_eval, Trials
+	from hyperopt.fmin import fmin
+	from hyperopt.pyll.base import scope
+	from sklearn.metrics import make_scorer, f1_score
+	from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+	trials = Trials(exp_key="tokenize_coptic")
+
+	average="binary"
+	if space is not None:
+		if "average" in space:
+			average = "micro"
+
+	def f1_sklearn(truth,predictions):
+		if space is not None:
+			if "average" in space:
+				return -f1_score(truth,predictions)
+		return -f1_score(truth,predictions,average=average)
+
+	f1_scorer = make_scorer(f1_sklearn)
+
+	def objective(in_params):
+		clf = in_params['clf']
+		if clf == "rf":
+			clf = RandomForestClassifier(n_jobs=4,random_state=42)
+		elif clf == "gbm":
+			clf = GradientBoostingClassifier(random_state=42)
+		elif clf == "xgb":
+			from xgboost import XGBClassifier
+			clf = XGBClassifier(random_state=42,nthread=4)
+		elif clf == "cat":
+			from catboost import CatBoostClassifier
+			clf = CatBoostClassifier(random_state=42)
+		else:
+			clf = ExtraTreesClassifier(n_jobs=4,random_state=42)
+
+		if clf.__class__.__name__ == "XGBClassifier":
+			params = {
+				'n_estimators': int(in_params['n_estimators']),
+				'max_depth': int(in_params['max_depth']),
+				'eta': float(in_params['eta']),
+				'gamma': float(in_params['gamma']),
+				'colsample_bytree': float(in_params['colsample_bytree']),
+				'subsample': float(in_params['subsample'])
+			}
+			if "average" in in_params:
+				params["average"] = in_params["average"]
+		else:
+			params = {
+				'n_estimators': int(in_params['n_estimators']),
+				'max_depth': int(in_params['max_depth']),
+				'min_samples_split': int(in_params['min_samples_split']),
+				'min_samples_leaf': int(in_params['min_samples_leaf']),
+				'max_features': in_params['max_features']
+			}
+
+		clf.set_params(**params)
+		if val_x is None:  # No fixed validation set given, perform cross-valiation on train
+			score = cross_val_score(clf, data_x, data_y, scoring=f1_scorer, cv=StratifiedKFold(n_splits=3), n_jobs=3).mean()
+		else:  # validated on validation set
+			clf.fit(data_x,data_y)
+			pred_y = clf.predict(val_x)
+			score = -f1_score(val_y,pred_y)
+		if "Forest" in clf.__class__.__name__:
+			shortname = "RF"
+		elif "Cat" in clf.__class__.__name__:
+			shortname = "CAT"
+		elif "XG" in clf.__class__.__name__:
+			shortname = "XGB"
+		else:
+			shortname = "ET" if "Extra" in clf.__class__.__name__ else "GBM"
+		print("F1 {:.3f} params {} {}".format(-score, params, shortname))
+		return score
+
+	# For large corpora, consider raising max n_estimators up to 350
+	if space is None:
+		space = {
+			'n_estimators': scope.int(hp.quniform('n_estimators', 75, 250, 10)),
+			'max_depth': scope.int(hp.quniform('max_depth', 5, 40, 1)),
+			'min_samples_split': scope.int(hp.quniform('min_samples_split', 2, 10, 1)),
+			'min_samples_leaf': scope.int(hp.quniform('min_samples_leaf', 1, 10, 1)),
+			'max_features': hp.choice('max_features', ["sqrt", None, 0.5, 0.6, 0.7, 0.8]),
+			'clf': hp.choice('clf', ["rf","et","gbm"])
+		}
+
+	sys.stderr.write("o Using "+str(data_x.shape[0])+" tokens to choose hyperparameters\n")
+	if val_x is not None:
+		sys.stderr.write("o Using "+str(val_x.shape[0])+" held out tokens as fixed validation data\n")
+	else:
+		sys.stderr.write("o No validation data provided, using cross-validation on train set to score\n")
+
+	best_params = fmin(fn=objective, space=space, algo=tpe.suggest, max_evals=max_evals, trials=trials)
+
+	best_params = space_eval(space,best_params)
+	sys.stderr.write(str(best_params) + "\n")
+
+	best_clf = best_params['clf']
+	if best_clf == "rf":
+		best_clf = RandomForestClassifier(n_jobs=4,random_state=42)
+	elif best_clf == "gbm":
+		best_clf = GradientBoostingClassifier(random_state=42)
+	elif best_clf == "xgb":
+		from xgboost import XGBClassifier
+		best_clf = XGBClassifier(random_state=42,nthread=4)
+	else:
+		best_clf = ExtraTreesClassifier(n_jobs=4,random_state=42)
+	del best_params['clf']
+	best_clf.set_params(**best_params)
+
+	return best_clf, best_params
+
+
+def multicol_transform(dframe, columns, all_encoders_):
+	for idx, column in enumerate(columns):
+		dframe.loc[:, column] = all_encoders_[idx].transform(dframe.loc[:, column].values)
+	return dframe
+
+
+#@profile
+def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None, train=False, freqs=None):
+
+	output = []
+
+	letters = config.letters
+	vowels = config.vowels
+	pos_lookup = config.pos_lookup
+
+	group_in_lex = pos_lookup[bound_group] if pos_lookup[bound_group] in letters["group_in_lex"] or train else "_"
+
+	for idx in range(len(bound_group)):
+
+		char_feats = []
+		so_far_substr = bound_group[:idx+1]
+		remaining_substr = bound_group[idx+1:]
+		remaining_substr_mns1 = bound_group[max(0,idx):]
+		remaining_substr_mns2 = bound_group[max(0,idx-1):]
+		so_far_pos = pos_lookup[so_far_substr] if pos_lookup[so_far_substr] in letters["so_far_pos"] or train else "_"
+		remaining_pos = pos_lookup[remaining_substr] if pos_lookup[remaining_substr] in letters["remaining_pos"] or train else "_"
+		remaining_pos_mns1 = pos_lookup[remaining_substr_mns1] if pos_lookup[remaining_substr_mns1] in letters["remaining_pos_mns1"] or train else "_"
+		remaining_pos_mns2 = pos_lookup[remaining_substr_mns2] if pos_lookup[remaining_substr_mns2] in letters["remaining_pos_mns2"] or train else "_"
+
+		current_letter = bound_group[idx] if bound_group[idx] in letters["current_letter"] or train else "_"
+		current_vowel = 1 if bound_group[idx] in vowels else 0
+		if idx > 0:
+			prev_letter = bound_group[idx-1] if bound_group[idx-1] in letters["prev_letter"] or train else "_"
+			prev_vowel = 1 if bound_group[idx-1] in vowels else 0
+		else:
+			prev_letter = "_"
+			prev_vowel = -1
+		if idx > 1:
+			prev_prev_letter = bound_group[idx-2] if bound_group[idx-2] in letters["prev_prev_letter"] else"_"
+			prev_prev_vowel = 1 if bound_group[idx-2] in vowels else 0
+		else:
+			prev_prev_letter = "_"
+			prev_prev_vowel = -1
+		if idx < len(bound_group)-1:
+			next_letter = bound_group[idx+1] if bound_group[idx+1] in letters["next_letter"] else"_"
+			next_vowel = 1 if bound_group[idx+1] in vowels else 0
+		else:
+			next_letter = "_"
+			next_vowel = -1
+		if idx < len(bound_group)-2:
+			next_next_letter = bound_group[idx+2] if bound_group[idx+2] in letters["next_next_letter"] or train else "_"
+			next_next_vowel = 1 if bound_group[idx+2] in vowels else 0
+		else:
+			next_next_letter = "_"
+			next_next_vowel = -1
+
+		char_feats += [idx, group_in_lex, current_letter, prev_prev_letter, prev_letter, next_letter, next_next_letter, len(bound_group)]
+		char_feats += [current_vowel, prev_prev_vowel, prev_vowel, next_vowel, next_next_vowel, so_far_pos, remaining_pos, remaining_pos_mns1, remaining_pos_mns2]
+		headers = ["idx","group_in_lex","current_letter","prev_prev_letter","prev_letter","next_letter","next_next_letter","len_bound_group"]
+		headers += ["current_vowel","prev_prev_vowel","prev_vowel","next_vowel","next_next_vowel", "so_far_pos", "remaining_pos","remaining_pos_mns1","remaining_pos_mns2"]
+
+		# POS lookup features
+		all_pos_feats = []
+		for chargram_idx, prev_char in enumerate([-4,-3,-2,-1,1,2,3,4]):
+			substr = ""
+			header_prefix = "_"
+			if prev_char < 0:
+				header_prefix = "mns" + str(abs(prev_char)) + "_"
+				if idx + prev_char >= 0:
+					substr = bound_group[idx+prev_char:idx+1]
+			elif prev_char > 0:
+				header_prefix = "pls" + str(abs(prev_char)) + "_"
+				if idx + prev_char <= len(bound_group):
+					substr = bound_group[idx:idx+prev_char+1]
+
+			coarse_tag = pos_lookup[substr] if pos_lookup[substr] in letters[header_prefix + "coarse"] or train else "_"
+
+			pos_feats = [coarse_tag]
+			if print_headers:
+				headers.append(header_prefix + "coarse")
+			all_pos_feats += pos_feats #clean_pos_feats
+
+		char_feats += all_pos_feats
+
+		if prev_group != "":
+			prev_first = prev_group[0] if prev_group[0] in letters["prev_grp_first"] or train else "_"
+			prev_last = prev_group[-1] if prev_group[-1] in letters["prev_grp_last"] or train else "_"
+			prev_grp_pos = pos_lookup[prev_group] if pos_lookup[prev_group] in letters["prev_grp_pos"] or train else "_"
+			prev_feats = [prev_first,prev_last,len(prev_group),prev_grp_pos]
+			char_feats += prev_feats
+			if print_headers:
+				headers += ["prev_grp_first","prev_grp_last","prev_grp_len","prev_grp_pos"]
+		if next_group != "":
+			next_first = next_group[0] if next_group[0] in letters["next_grp_first"] or train else "_"
+			next_last = next_group[-1] if next_group[-1] in letters["next_grp_last"] or train else "_"
+			next_grp_pos = pos_lookup[next_group] if pos_lookup[next_group] in letters["next_grp_pos"] or train else "_"
+			next_feats = [next_first,next_last,len(next_group),next_grp_pos]
+			char_feats += next_feats
+			if print_headers:
+				headers += ["next_grp_first","next_grp_last","next_grp_len","next_grp_pos"]
+
+		headers += ["freq_ratio"]
+		if freqs is None:
+			char_feats += [0.0]
+		else:
+			f_sofar = freqs[so_far_substr]
+			f_remain = freqs[remaining_substr]
+			f_whole = freqs[bound_group] + 0.0000000001  # Delta smooth whole
+			char_feats += [f_sofar*f_remain/f_whole]
+
+		if grp_id > -1:
+			char_feats += [grp_id]
+			if print_headers:
+				headers += ["grp_id"]
+		if is_test > -1:
+			char_feats += [is_test]
+			if print_headers:
+				headers += ["is_test"]
+
+		char_feats += [bound_group,prev_group,next_group]
+		headers += ["this_group","prev_group","next_group"]
+
+		output.append(char_feats)
+
+	if print_headers:
+		return headers
+	else:
+		return output
+
+
+def segs2array(segs):
+	output = []
+	cursor = 0
+	while cursor < len(segs) - 1:  # Word not over yet
+		if segs[cursor + 1] == "|":
+			output.append(1)  # 1 = positive class
+			cursor += 2
+		else:
+			output.append(0)  # 0 = negative class
+			cursor += 1
+	output.append(0)
+
+	return output
 
 
 def read_lex(short_pos, lex_file):
@@ -65,7 +376,7 @@ def read_lex(short_pos, lex_file):
 			else:
 				lex[word].add(pos)
 
-	pos_lookup = defaultdict(lambda_underscore)
+	pos_lookup = {}
 	for word in lex:
 		pos_lookup[word] = "|".join(sorted(list(lex[word])))
 
@@ -121,7 +432,8 @@ class RFTokenizer:
 		self.regex_tok = None
 		self.enforce_allowed = False
 		self.short_pos = {}
-		self.pos_lookup = defaultdict(lambda: "_")
+		self.pos_lookup = {}
+		self.test_cache = {}  # Cache for bg2array encoded bound groups at test time
 		self.allowed = defaultdict(list)
 		self.conf["base_letters"] = set()
 		self.conf["vowels"] = set()
@@ -201,8 +513,17 @@ class RFTokenizer:
 		if model_path is None:
 			# Default model path for a language is the language name, extension ".sm2" for Python 2 or ".sm3" for Python 3
 			model_path = self.lang + ".sm" + str(sys.version_info[0])
-		(self.tokenizer, self.num_labels, self.cat_labels, self.encoder, self.preparation_pipeline, self.pos_lookup, self.freqs, self.conf_file_parser) = joblib.load(model_path)
+		if not os.path.exists(model_path):  # Try loading from calling directory
+			model_path = os.path.dirname(sys.argv[0]) + self.lang + ".sm" + str(sys.version_info[0])
+		if not os.path.exists(model_path):  # Try loading from tokenize_rf.py directory
+			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + self.lang + ".sm" + str(sys.version_info[0])
+		#sys.stderr.write("Module: " + self.__module__ + "\n")
+		self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
+		default_pos_lookup = defaultdict(lambda :"_")
+		default_pos_lookup.update(pos_lookup)
+		self.pos_lookup = default_pos_lookup
 		self.read_conf_file()
+		self.loaded = True
 
 	def train(self, train_file, lexicon_file=None, freq_file=None, test_prop=0.1, output_importances=False, dump_model=False,
 			  cross_val_test=False, output_errors=False, ablations=None, dump_transformed_data=False, do_shuffle=True, conf=None):
@@ -226,8 +547,8 @@ class RFTokenizer:
 		"""
 		import timing
 
-		pos_lookup = read_lex(self.short_pos,lexicon_file)
 		self.read_conf_file(file_name=conf)
+		pos_lookup = read_lex(self.short_pos,lexicon_file)
 		self.pos_lookup = pos_lookup
 		conf_file_parser = self.conf_file_parser
 		letter_config = LetterConfig(self.letters, self.conf["vowels"], self.pos_lookup)
@@ -318,7 +639,7 @@ class RFTokenizer:
 			if bound_group != "|":
 				if len(bound_group) != len(segmentation.replace("|","")):  # Ignore segmentations that also normalize
 					non_ident_segs += 1
-					bug_rows.append(row_idx)
+					bug_rows.append((row_idx,bound_group,segmentation.replace("|","")))
 					continue
 
 			###
@@ -343,8 +664,8 @@ class RFTokenizer:
 		sys.stderr.write("o Finished encoding " + str(len(data_y)) + " chars (" + str(len(seg_table)) + " groups, " + str(len(encoding_cache)) + " group types)\n")
 
 		if non_ident_segs > 0:
-			with open("bug_rows.txt",'w') as f:
-				f.write("\n".join([str(r) for r in sorted([shuffle_mapping[x] for x in bug_rows])]) + "\n")
+			with io.open("bug_rows.txt",'w',encoding="utf8") as f:
+				f.write(("\n".join([str(r) + ": " + g + "<>" + s for r, g, s in sorted([[shuffle_mapping[x], g, s] for x, g, s in bug_rows])]) + "\n"))
 
 			sys.stderr.write("i WARN: found " + str(non_ident_segs) + " rows in training data where left column characters not identical to right column characters\n")
 			sys.stderr.write("        Row numbers dumped to: bug_rows.txt\n")
@@ -352,15 +673,6 @@ class RFTokenizer:
 
 		data_y = np.array(data_y)
 
-		cat_labels = ['group_in_lex','current_letter', 'prev_prev_letter', 'prev_letter', 'next_letter', 'next_next_letter',
-					 'mns4_coarse', 'mns3_coarse', 'mns2_coarse',
-					 'mns1_coarse', 'pls1_coarse', 'pls2_coarse',
-					 'pls3_coarse', 'pls4_coarse', "so_far_pos", "remaining_pos","prev_grp_pos","next_grp_pos",
-					  "remaining_pos_mns1","remaining_pos_mns2",
-					  "prev_grp_first", "prev_grp_last","next_grp_first","next_grp_last"]
-
-		num_labels = ['idx','len_bound_group',"current_vowel","prev_prev_vowel","prev_vowel","next_vowel","next_next_vowel",
-					  "prev_grp_len","next_grp_len","freq_ratio"]
 
 		# Remove features switched off in .conf file
 		for label in self.conf["unused"]:
@@ -371,6 +683,7 @@ class RFTokenizer:
 
 		# Handle temporary ablations if specified in option -a
 		if ablations is not None:
+			sys.stderr.write("o Applying ablations\n")
 			if len(ablations) > 0 and ablations != "none":
 				abl_feats = ablations.split(",")
 				sys.stderr.write("o Ablating features:\n")
@@ -388,6 +701,7 @@ class RFTokenizer:
 						sys.stderr.write("\tERR: can't find ablation feature " + feat + "\n")
 						sys.exit()
 
+		sys.stderr.write("o Creating dataframe\n")
 		data_x = pd.DataFrame(all_encoded_groups, columns=headers)
 
 		###
@@ -405,8 +719,7 @@ class RFTokenizer:
 			sys.exit()
 		###
 
-		encoder = MultiColumnLabelEncoder(pd.Index(cat_labels))
-		data_x_enc = encoder.fit_transform(data_x)
+		data_x_enc, multicol_dict = multicol_fit_transform(data_x, pd.Index(cat_labels))
 
 		if test_prop > 0:
 			sys.stderr.write("o Generating train/test split with test proportion "+str(test_prop)+"\n")
@@ -415,27 +728,14 @@ class RFTokenizer:
 		strat_train_set = data_x_enc.iloc[data_x_enc.index[data_x_enc["is_test"] == 0]]
 		strat_test_set = data_x_enc.iloc[data_x_enc.index[data_x_enc["is_test"] == 1]]
 
-		cat_pipeline = Pipeline([
-			('selector', DataFrameSelector(cat_labels)),
-		])
-
-		num_pipeline = Pipeline([
-			('selector', DataFrameSelector(num_labels))
-		])
-
-		preparation_pipeline = FeatureUnion(transformer_list=[
-			("cat_pipeline", cat_pipeline),
-			("num_pipeline", num_pipeline),
-		])
-
 		sys.stderr.write("o Transforming data to numerical array\n")
-		train_x = preparation_pipeline.fit_transform(strat_train_set)
+		train_x = strat_train_set[cat_labels+num_labels].values
 
 		train_y = strat_train_set["boundary"]
 		train_y_bin = np.where(strat_train_set['boundary'] == 0, 0, 1)
 
 		if test_prop > 0:
-			test_x = preparation_pipeline.transform(strat_test_set)
+			test_x = strat_test_set[cat_labels+num_labels].values
 			test_y_bin = np.where(strat_test_set['boundary'] == 0, 0, 1)
 			bound_grp_idx = np.array(strat_test_set['grp_id'])
 
@@ -446,30 +746,44 @@ class RFTokenizer:
 			print("o Majority baseline:")
 			print("\t" + str(accuracy_score(test_y_bin, pred)))
 
-		forest_clf = ExtraTreesClassifier(n_estimators=250, max_features=None, n_jobs=3, random_state=42)
+		# Classifier used in 2018 paper:
+		#clf = ExtraTreesClassifier(n_estimators=250, max_features=None, n_jobs=3, random_state=42)
+
+		# Use xgboost for slightly better accuracy than paper
+		from xgboost import XGBClassifier
+
+		clf = XGBClassifier(n_estimators=230,n_jobs=3,random_state=42,max_depth=17,subsample=1.0,colsample_bytree=0.6,eta=.07,gamma=.09)
 
 		if cross_val_test:
-			# Modify code to tune hyperparameters/use different estimators
+			# Modify code to tune hyperparameters
 
-			from sklearn.model_selection import GridSearchCV
-			sys.stderr.write("o Running CV...\n")
-
-			params = {"n_estimators":[300,400,500],"max_features":["auto",None]}#,"class_weight":["balanced",None]}
-			grid = GridSearchCV(RandomForestClassifier(n_jobs=-1,random_state=42,warm_start=True),param_grid=params,refit=False)
-			grid.fit(train_x,train_y_bin)
-			print("\nGrid search results:\n" + 30 * "=")
-			for key in grid.cv_results_:
-				print(key + ": " + str(grid.cv_results_[key]))
+			from hyperopt import hp
+			from hyperopt.pyll import scope
+			space = {
+				'n_estimators': scope.int(hp.quniform('n_estimators', 100, 250, 10)),
+				'max_depth': scope.int(hp.quniform('max_depth', 8, 35, 1)),
+				'eta': scope.float(hp.quniform('eta', 0.01, 0.2, 0.01)),
+				'gamma': scope.float(hp.quniform('gamma', 0.01, 0.2, 0.01)),
+				'colsample_bytree': hp.choice('colsample_bytree', [0.6,0.7,0.8,1.0]),
+				'subsample': hp.choice('subsample', [0.6,0.7,0.8,0.9,1.0]),
+				'clf': hp.choice('clf', ["xgb"])
+			}
+			if test_prop > 0:
+				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=test_x,val_y=test_y_bin,space=space,max_evals=20)
+			else:
+				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=None,val_y=None,space=space,max_evals=100)
+			print(best_params)
+			clf = best_clf
 
 			print("\nBest parameters:\n" + 30 * "=")
-			print(grid.best_params_)
+			print(best_params)
 			sys.exit()
 
 		sys.stderr.write("o Learning...\n")
-		forest_clf.fit(train_x, train_y_bin)
+		clf.fit(train_x, train_y_bin)
 
 		if test_prop > 0:
-			pred = forest_clf.predict(test_x)
+			pred = clf.predict(test_x)
 			j=-1
 			for i, row in strat_test_set.iterrows():
 				j+=1
@@ -505,24 +819,26 @@ class RFTokenizer:
 				with io.open("errs.txt",'w',encoding="utf8") as f:
 					for err in errs:
 						f.write(err + "\t" + str(errs[err])+"\n")
-
-			if output_importances:
-				feature_names = cat_labels + num_labels
-
-				zipped = zip(feature_names, forest_clf.feature_importances_)
-				sorted_zip = sorted(zipped, key=lambda x: x[1], reverse=True)
-				print("o Feature importances:\n")
-				for name, importance in sorted_zip:
-					print(name, "=", importance)
 		else:
 			print("o Test proportion is 0%, skipping evaluation")
 
+		if output_importances:
+			feature_names = cat_labels + num_labels
+
+			zipped = zip(feature_names, clf.feature_importances_)
+			sorted_zip = sorted(zipped, key=lambda x: x[1], reverse=True)
+			print("o Feature importances:\n")
+			for name, importance in sorted_zip:
+				print(name, "=", importance)
+
+
 		if dump_model:
-			joblib.dump((forest_clf, num_labels, cat_labels, encoder, preparation_pipeline, pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]), compress=3)
+			plain_dict_pos_lookup = {}
+			plain_dict_pos_lookup.update(pos_lookup)
+			joblib.dump((clf, num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]), compress=3)
 			print("o Dumped trained model to " + self.lang + ".sm" + str(sys.version_info[0]))
 
-
-	def rf_tokenize(self, data, sep="|", indices=None):
+	def rf_tokenize(self, data, sep="|", indices=None, proba=False):
 		"""
 		Main tokenizer routine
 
@@ -533,19 +849,9 @@ class RFTokenizer:
 		"""
 
 		if not self.loaded:
-			if os.path.isfile(self.model):
-				self.load(self.model)
-			else:
-				if os.path.isfile(self.lang + ".sm" + str(sys.version_info[0])):
-					self.load(self.lang + ".sm" + str(sys.version_info[0]))
-				elif os.path.isfile(script_dir + os.sep + self.lang + ".sm" + str(sys.version_info[0])):
-					self.load(script_dir + os.sep + self.lang + ".sm" + str(sys.version_info[0]))
-				else:
-					sys.stderr.write("FATAL: Could not find segmentation model at " + script_dir + os.sep + self.model + ".sm" + str(sys.version_info[0]))
-					sys.exit()
-			self.loaded = True
+			self.load()
 
-		tokenizer, num_labels, cat_labels, encoder, preparation_pipeline, freqs = self.tokenizer, self.num_labels, self.cat_labels, self.encoder, self.preparation_pipeline, self.freqs
+		tokenizer, num_labels, cat_labels, multicol_dict, freqs = self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, self.freqs
 
 		do_not_tok_indices = set()
 
@@ -561,8 +867,8 @@ class RFTokenizer:
 
 		letters = {}
 		for header in headers:
-			if header in encoder.encoder_dict:
-				letters[header] = encoder.encoder_dict[header].classes_
+			if header in multicol_dict["encoder_dict"]:
+				letters[header] = multicol_dict["encoder_dict"][header].classes_
 
 		letter_config = LetterConfig(letters, self.conf["vowels"], self.pos_lookup)
 
@@ -588,7 +894,12 @@ class RFTokenizer:
 						do_not_tok_indices.add(j)
 			j += 1
 
-			encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,freqs=freqs)
+			group_type = "_".join([prev_group, next_group, word])
+			if group_type in self.test_cache:  # No need to encode, an identical featured group has already been seen
+				encoded_group = self.test_cache[group_type]
+			else:
+				encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,freqs=freqs)
+				self.test_cache[group_type] = encoded_group
 			encoded_groups += encoded_group
 			word_lengths.append(cursor + len(word))
 			cursor += len(word)
@@ -600,12 +911,19 @@ class RFTokenizer:
 		data_x = pd.DataFrame(encoded_groups)
 		data_x.columns = headers
 
-		encoder.transform(data_x)
-		prepped = preparation_pipeline.transform(data_x)
+		data_x = multicol_transform(data_x,multicol_dict["columns"],multicol_dict["all_encoders_"])
+		prepped = data_x[cat_labels+num_labels].values
 
-		p = tokenizer.predict(prepped)
+		if proba:
+			probas = tokenizer.predict_proba(prepped)
+			p = [int(p[1]>0.5) for p in probas]
+			probs = np.split(np.array([p[1] for p in probas]), word_lengths)
+		else:
+			p = tokenizer.predict(prepped)
 		p_words = np.split(p, word_lengths)
 		out_tokenized = []
+		out_probas = []
+		out_proba = 0.0
 
 		for word_idx, segmentation in enumerate(p_words):
 			tokenized = ""
@@ -619,12 +937,20 @@ class RFTokenizer:
 					for f, r in self.regex_tok:
 						word = f.sub(r, word)
 					tokenized += word
+					if proba:
+						out_proba = 1.0
 				else:
+					out_proba = 1.0
+					if proba:
+						segmentation_probas = probs[word_idx]
 					for idx, bit in enumerate(segmentation):
 						if PY3:
 							tokenized += data[word_idx][idx]
 						else:
 							tokenized += data[word_idx][idx]
+						if proba:
+							if segmentation_probas[idx] < out_proba:
+								out_proba = segmentation_probas[idx]
 						if bit == 1:
 							if self.enforce_allowed:
 								neg_idx = -1*(len(data[word_idx])-idx-1)
@@ -644,12 +970,16 @@ class RFTokenizer:
 										continue
 							tokenized += sep
 			out_tokenized.append(tokenized)
+			if proba:
+				out_probas.append(out_proba)
 
-		return out_tokenized
+		if proba:
+			return out_tokenized, out_probas
+		else:
+			return out_tokenized
 
 
 if __name__ == "__main__":
-	from preprocess import DataFrameSelector, MultiColumnLabelEncoder, bg2array, segs2array
 	from argparse import ArgumentParser
 
 	parser = ArgumentParser()
@@ -664,7 +994,8 @@ if __name__ == "__main__":
 	parser.add_argument("-e","--errors",action="store_true",help="Whether to output errors during training evaluation to errs.txt")
 	parser.add_argument("-r","--retrain_all",action="store_true",help="re-run training on entire dataset (train+test) after testing")
 	parser.add_argument("-a","--ablations",action="store",default=None,help="comma separated feature names to ablate in experiments")
-	parser.add_argument("-v","--version",action="store_true",help="Print version number and quit")
+	parser.add_argument("-o","--optimize",action="store_true",help="run hyperparameter optimization",default=False)
+	parser.add_argument("-v","--version",action="store_true",help="print version number and quit")
 	parser.add_argument("file",action="store",help="file to tokenize or train on")
 
 	if "-v" in sys.argv or "--version" in sys.argv:
@@ -681,7 +1012,8 @@ if __name__ == "__main__":
 		if options.retrain_all:
 			do_dump = False
 		rf_tok.train(train_file=options.file, lexicon_file=options.lexicon, dump_model=do_dump, freq_file=options.freqs, output_errors=options.errors,
-					 output_importances=options.importances, test_prop=options.proportion, ablations=options.ablations, conf=options.conf)
+					 output_importances=options.importances, test_prop=options.proportion, ablations=options.ablations, conf=options.conf,
+					 cross_val_test=options.optimize)
 		if options.retrain_all:
 			print("\no Retraining on complete data set (no test partition)...")
 			rf_tok.train(train_file=options.file, lexicon_file=options.lexicon, dump_model=True, output_importances=False,
@@ -702,5 +1034,3 @@ if __name__ == "__main__":
 	else:
 		print("\n".join(output).encode("utf8"))
 
-else:
-	from modules.preprocess import DataFrameSelector, MultiColumnLabelEncoder, bg2array, segs2array
