@@ -12,7 +12,7 @@ For full NLP pipelines for morphologically rich languages (MRLs) based on this t
 
 This is a simple tokenizer for word-internal segmentation in morphologically rich languages such as Hebrew, Coptic or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
 
-Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 100K examples of word forms to segment), and works out of the box with fairly simple dependencies (see Requirements).
+Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 100K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements).
 
 To cite this tool, please refer to the following paper:
 
@@ -32,12 +32,36 @@ The data provided for the Hebrew segmentation experiment in this paper, given in
 
 Coptic data is derived from Coptic Scriptorium corpora, see more information at http://www.copticscriptorium.org/
 
+## Performance
+
+Current scores on the SPMRL Hebrew dataset:
+
+```
+Perfect groups: 0.9821036106750393
+Precision: 0.9761790182868142
+Recall: 0.967103694874851
+F-Score: 0.9716201652496708
+```
+
+Coptic Scriptorium:
+
+```
+Perfect groups: 0.952007602755999
+Precision: 0.9797786292039166
+Recall: 0.9637772194304858
+F-Score: 0.971712054042643
+```
+
 ## Requirements
 
 The tokenizer needs:
-  * scikit-learn (preferably ==0.19.0)
+  * scikit-learn
   * numpy
   * pandas
+  * xgboost
+
+And if you want to run hyperparameter optimization:
+  * hyperopt
 
 Compatible with Python 2 or 3, but compiled models must be specific to Python 2 / 3 (can't use a model trained under Python 2 with Python 3).
 
@@ -180,7 +204,7 @@ The frequency file is a tab delimited text file with one word form per line and 
   * Variable importances can be outputted using `-i`
   * You can perform retraining on the entire dataset after evaluation of feature importances using `-r`
   * You can ablate certain features using `-a` and a comma separated list of feautres
+  * Hyperparameter optimization ca be run with `-o`
 
-If you want to test different classifiers/hyperparameters, there is some cross-validation code in the train() routine (look for `cross_val_test`).
-
+If you want to test different classifiers/modify default hyperparameters, you can modify the cross-validation code in the train() routine or use a fixed dev set (look for `cross_val_test`).
 
