@@ -8,7 +8,7 @@ For full NLP pipelines for morphologically rich languages (MRLs) based on this t
   * Coptic: http://www.github.com/CopticScriptorium/coptic-nlp/
   * Hebrew: http://www.github.com/amir-zeldes/HebPipe/
   
-Pretrained models are provided for Coptic, Arabic and Hebrew
+Pretrained models are provided for **Coptic**, **Arabic** and **Hebrew**
 
 ## Installation
 
