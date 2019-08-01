@@ -7,16 +7,32 @@ For full NLP pipelines for morphologically rich languages (MRLs) based on this t
 
   * Coptic: http://www.github.com/CopticScriptorium/coptic-nlp/
   * Hebrew: http://www.github.com/amir-zeldes/HebPipe/
+  
+Pretrained models are provided for Coptic, Arabic and Hebrew
+
+## Installation
+
+RFTokenizer is available for installation from PyPI:
+
+```
+pip install rftokenizer
+```
+
+Or you can clone this repo and run
+
+```
+python setup.py install
+```
 
 ## Introduction
 
 This is a simple tokenizer for word-internal segmentation in morphologically rich languages such as Hebrew, Coptic or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
 
-Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 100K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements).
+Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 200K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements).
 
 To cite this tool, please refer to the following paper:
 
-Zeldes, Amir (2018) A Characterwise Windowed Approach to Hebrew Morphological Segmentation. In: *Proceedings of the 15th SIGMORPHON Workshop on Computational Research in Phonetics, Phonology, and Morphology*. Brussels, Belgium.
+Zeldes, Amir (2018) A Characterwise Windowed Approach to Hebrew Morphological Segmentation. In: *Proceedings of the 15th SIGMORPHON Workshop on Computational Research in Phonetics, Phonology, and Morphology*. Brussels, Belgium, 101-110.
 
 ```
 @InProceedings{,
@@ -24,7 +40,8 @@ Zeldes, Amir (2018) A Characterwise Windowed Approach to Hebrew Morphological Se
   title     = {A CharacterwiseWindowed Approach to {H}ebrew Morphological Segmentation},
   booktitle = {Proceedings of the 15th {SIGMORPHON} Workshop on Computational Research in Phonetics, Phonology, and Morphology},
   year      = {2018},
-  address   = {Brussels, Belgium}
+  address   = {Brussels, Belgium},
+  pages = {101--110}
 }
 ```
 
@@ -32,21 +49,32 @@ The data provided for the Hebrew segmentation experiment in this paper, given in
 
 Coptic data is derived from Coptic Scriptorium corpora, see more information at http://www.copticscriptorium.org/
 
+Arabic data is derived from the Prague Arabic Dependency Treebank (UD_Arabic-PADT, https://github.com/UniversalDependencies/UD_Arabic-PADT)
+
 ## Performance
 
-Current scores on the SPMRL Hebrew dataset:
+Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1):
 
 ```
-Perfect groups: 0.9821036106750393
+Perfect word forms: 0.9821036106750393
 Precision: 0.9761790182868142
 Recall: 0.967103694874851
 F-Score: 0.9716201652496708
 ```
 
-Coptic Scriptorium:
+Prague Arabic Dependency Treebank (UD_Arabic-PADT):
 
 ```
-Perfect groups: 0.952007602755999
+Perfect word forms: 0.9846204866724703
+Precision: 0.9744331886155331
+Recall: 0.9874853343762221
+F-Score: 0.9809158451901132
+```
+
+Coptic Scriptorium (UD_Coptic-Scriptorium):
+
+```
+Perfect word forms: 0.952007602755999
 Precision: 0.9797786292039166
 Recall: 0.9637772194304858
 F-Score: 0.971712054042643
@@ -67,7 +95,9 @@ Compatible with Python 2 or 3, but compiled models must be specific to Python 2 
 
 ## Using
 
-To use the tokenizer, include the model file (e.g. `heb.sm3`) in the tokenizer's directory, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
+### Command line
+
+To use the tokenizer, include the model file (e.g. `heb.sm3`) in the tokenizer's directory or in `models/`, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
 
 ```
 > python tokenizer_rf.py -m heb example_in.txt > example_out.txt
@@ -94,6 +124,21 @@ Output format:
 ```
 
 You can also use the option `-n` to separate segments using a newline instead of the pipe character.
+
+### Importing as a module
+
+You can import RFTokenizer once it is installed (e.g. via pip), for example:
+
+```
+>>> from rftokenizer import RFTokenizer
+>>> my_tokenizer = RFTokenizer(model="ara")
+>>> data = open("test_ara.txt",encoding="utf8").read()
+>>> tokenized = my_tokenizer.rf_tokenize(data)
+>>> print(tokenized)
+```
+
+Note that .rf_tokenize() expects a list of word forms to analyze or a string with word forms separated by new lines. The return value is a list of analyses separated by the separator (default: `|`).
+
 
 ## Training
 
