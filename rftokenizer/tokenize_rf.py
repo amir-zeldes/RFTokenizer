@@ -7,7 +7,7 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2019, Amir Zeldes"
 __license__ = "Apache 2.0"
@@ -508,8 +508,9 @@ class RFTokenizer:
 		Load a picked model.
 
 		:param model_path: Path to the model pickle file. If not specified, looks for model language name +.sm2 (Python 2) or .sm3 (Python 3), e.g. heb.sm3
-		:return: void
+		:return: None
 		"""
+
 		if model_path is None:
 			# Default model path for a language is the language name, extension ".sm2" for Python 2 or ".sm3" for Python 3
 			model_path = self.lang + ".sm" + str(sys.version_info[0])
@@ -517,6 +518,8 @@ class RFTokenizer:
 			model_path = os.path.dirname(sys.argv[0]) + self.lang + ".sm" + str(sys.version_info[0])
 		if not os.path.exists(model_path):  # Try loading from tokenize_rf.py directory
 			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + self.lang + ".sm" + str(sys.version_info[0])
+		if not os.path.exists(model_path):  # Try loading from models/ directory
+			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + "models" + os.sep + self.lang + ".sm" + str(sys.version_info[0])
 		#sys.stderr.write("Module: " + self.__module__ + "\n")
 		self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
 		default_pos_lookup = defaultdict(lambda :"_")
@@ -532,19 +535,20 @@ class RFTokenizer:
 		:param train_file: File with segmentations to train on in one of the two formats described in make_prev_next()
 		:param lexicon_file: Tab delimited lexicon file with full forms in first column and POS tag in second column (multiple rows per form possible)
 		:param freq_file: Tab delimited file with segment forms and their frequencies as integers in two columns
-		:param conf: configuration file for training (by default: <MODELNAME>.conf)
-		:param test_prop: (0.0 -- 0.99) Proportion of shuffled data to test on
+		:param test_prop: (0.0 -- 0.99..) Proportion of shuffled data to test on
 		:param output_importances: Whether to print feature importances (only if test proportion > 0.0)
 		:param dump_model: Whether to dump trained model to disk via joblib
 		:param cross_val_test: Whether to perform cross-validation for hyper parameter optimization
 		:param output_errors: Whether to output prediction errors to a file 'errs.txt'
 		:param ablations: Comma separated string of feature names to ablate, e.g. "freq_ratio,prev_grp_pos,next_grp_pos"
 		:param dump_transformed_data: If true, transform data to a pandas dataframe and write to disk, then quit
-				(useful to train other approaches on the same features, e.g. a DNN classifier)
+				(useful to train other approaches on the same features, e.g. a neural classifier)
 		:param do_shuffle: Whether training data is shuffled after context extraction but before test partition is created
 				(this has no effect if training on whole training corpus)
+		:param conf: configuration file for training (by default: <MODELNAME>.conf)
 		:return: None
 		"""
+
 		import timing
 
 		self.read_conf_file(file_name=conf)
@@ -752,7 +756,12 @@ class RFTokenizer:
 		# Use xgboost for slightly better accuracy than paper
 		from xgboost import XGBClassifier
 
-		clf = XGBClassifier(n_estimators=230,n_jobs=3,random_state=42,max_depth=17,subsample=1.0,colsample_bytree=0.6,eta=.07,gamma=.09)
+		# Good parameters for Arabic
+		if self.model == "ara":
+			clf = XGBClassifier(n_estimators=170,n_jobs=3,random_state=42,max_depth=24,subsample=1.0,colsample_bytree=0.8,eta=.13,gamma=.15)
+		else:
+			# Good parameters for Hebrew/Coptic
+			clf = XGBClassifier(n_estimators=230,n_jobs=3,random_state=42,max_depth=17,subsample=1.0,colsample_bytree=0.6,eta=.07,gamma=.09)
 
 		if cross_val_test:
 			# Modify code to tune hyperparameters
@@ -769,15 +778,14 @@ class RFTokenizer:
 				'clf': hp.choice('clf', ["xgb"])
 			}
 			if test_prop > 0:
-				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=test_x,val_y=test_y_bin,space=space,max_evals=20)
+				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=test_x,val_y=test_y_bin,space=space,max_evals=100)
 			else:
-				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=None,val_y=None,space=space,max_evals=100)
+				best_clf, best_params = hyper_optimize(train_x,train_y_bin,val_x=None,val_y=None,space=space,max_evals=20)
 			print(best_params)
 			clf = best_clf
 
 			print("\nBest parameters:\n" + 30 * "=")
 			print(best_params)
-			sys.exit()
 
 		sys.stderr.write("o Learning...\n")
 		clf.fit(train_x, train_y_bin)
@@ -845,11 +853,18 @@ class RFTokenizer:
 		:param data: ordered list of word forms (prev/next word context is taken from list, so meaningful order is assumed)
 		:param sep: separator to use for found segments, default: |
 		:param indices: options; list of integer indices to process. If supplied, positions not in the list are skipped
+		:param proba: boolean, return probabilities
 		:return: list of word form strings tokenized using the separator
 		"""
 
 		if not self.loaded:
 			self.load()
+
+		if not isinstance(data,list):
+			if "\n" in data:
+				data = data.strip().split()
+			else:
+				data = [data]
 
 		tokenizer, num_labels, cat_labels, multicol_dict, freqs = self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, self.freqs
 

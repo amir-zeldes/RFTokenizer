@@ -107,7 +107,7 @@ def main(goldfile, predfile, preds_as_string=False):
 		perf_score = 0
 
 	print("Total chars: " + str(pred_chars))
-	print("Perfect groups: " + str(perf_score))
+	print("Perfect word forms: " + str(perf_score))
 	print("Precision: " + str(precision))
 	print("Recall: " + str(recall))
 	print("F-Score: " + str(f_score))
