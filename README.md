@@ -28,7 +28,7 @@ python setup.py install
 
 This is a simple tokenizer for word-internal segmentation in morphologically rich languages such as Hebrew, Coptic or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
 
-Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on scikit-learn ensemble classifiers, which are fast, relatively accurate using little training data, and resist overfitting. However, solutions do not represent globally optimal segmentations (obtainable using a CRF/RNN+CRF or similar). The tokenizer is optimal for medium amounts of data (10K - 200K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements).
+Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on an xgboost classifier, which is fast, very accurate using little training data, and resist overfitting. Solutions do not represent globally optimal segmentations (there is no CRF layer, transition lattices or similar), but at the same time a globally coherent segmentation of each string into known morphological categories is not required, which leads to better OOV item handling. The tokenizer is optimal for medium amounts of data (10K - 200K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements). For two languages as of summer 2019, RFTokenizer either provides the highest published segmentation accuracy on the official test set (Hebrew) or forms part of an esemble which does so (Coptic).
 
 To cite this tool, please refer to the following paper:
 
@@ -53,7 +53,7 @@ Arabic data is derived from the Prague Arabic Dependency Treebank (UD_Arabic-PAD
 
 ## Performance
 
-Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1):
+Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits):
 
 ```
 Perfect word forms: 0.9821036106750393
@@ -151,7 +151,7 @@ Training is invoked like this:
 > python tokenize_rf.py -t -m <LANG> -c <CONF> -l <LEXICON> -f <FREQS> <TRAINING>
 ```
 
-This will produce `LANG.sm3`, the compiled model (or `.sm2` under Python 2). If <CONF> is not supplied, it is assumed to be called <LANG>.conf.
+This will produce `LANG.sm3`, the compiled model (or `.sm2` under Python 2). If `<CONF>` is not supplied, it is assumed to be called `<LANG>.conf`.
 
 ### Configuration
 
@@ -248,8 +248,8 @@ The frequency file is a tab delimited text file with one word form per line and 
   * You can specify a train/test split proportion using e.g. `-p 0.2` (default test partition is 0.1 of the data)
   * Variable importances can be outputted using `-i`
   * You can perform retraining on the entire dataset after evaluation of feature importances using `-r`
-  * You can ablate certain features using `-a` and a comma separated list of feautres
-  * Hyperparameter optimization ca be run with `-o`
+  * You can ablate certain features using `-a` and a comma separated list of features
+  * Hyperparameter optimization can be run with `-o`
 
 If you want to test different classifiers/modify default hyperparameters, you can modify the cross-validation code in the train() routine or use a fixed dev set (look for `cross_val_test`).
 
