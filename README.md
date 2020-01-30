@@ -28,7 +28,7 @@ python setup.py install
 
 This is a simple tokenizer for word-internal segmentation in morphologically rich languages such as Hebrew, Coptic or Arabic, which have big 'super-tokens' (space-delimited words which contain e.g. clitics that need to be segmented) and 'sub-tokens' (the smaller units contained in super-tokens).
 
-Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on an xgboost classifier, which is fast, very accurate using little training data, and resist overfitting. Solutions do not represent globally optimal segmentations (there is no CRF layer, transition lattices or similar), but at the same time a globally coherent segmentation of each string into known morphological categories is not required, which leads to better OOV item handling. The tokenizer is optimal for medium amounts of data (10K - 200K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements). For two languages as of summer 2019, RFTokenizer either provides the highest published segmentation accuracy on the official test set (Hebrew) or forms part of an esemble which does so (Coptic).
+Segmentation is based on character-wise binary classification: each character is predicted to have a following border or not. The tokenizer relies on an xgboost classifier, which is fast, very accurate using little training data, and resists overfitting. Solutions do not represent globally optimal segmentations (there is no CRF layer, transition lattices or similar), but at the same time a globally coherent segmentation of each string into known morphological categories is not required, which leads to better OOV item handling. The tokenizer is optimal for medium amounts of data (10K - 200K examples of word forms to segment), and works out of the box with fairly simple dependencies and small model files (see Requirements). For two languages as of summer 2019, RFTokenizer either provides the highest published segmentation accuracy on the official test set (Hebrew) or forms part of an ensemble which does so (Coptic).
 
 To cite this tool, please refer to the following paper:
 
@@ -100,7 +100,7 @@ Compatible with Python 2 or 3, but compiled models must be specific to Python 2 
 To use the tokenizer, include the model file (e.g. `heb.sm3`) in the tokenizer's directory or in `models/`, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
 
 ```
-> python tokenizer_rf.py -m heb example_in.txt > example_out.txt
+> python tokenize_rf.py -m heb example_in.txt > example_out.txt
 ```
 
 Input file format:
@@ -163,7 +163,7 @@ You must specify some settings for your model in a file usually named `LANG.conf
   Optionally you may add:
   * vowels - if the language distinguishes something like vowels (including matres lectionis), it can be useful to configure them here
   * pos_classes - a mapping of POS tags to collapsed POS tags in the lexicon, in order to reduce sparseness (especially if the tag set is big but training data is small). See below for format.
-  * unused - comma separated list of feautre names to permanently disable in this model.
+  * unused - comma separated list of feature names to permanently disable in this model.
   * diacritics - not currently used.
   * regex_tok - a set of regular expressions used for rule based tokenization (e.g. for numbers, see example below)
   * allowed - mapping of characters that may be followed by a boundary at positive positions in the beginning of the word (starting at 0) or negative positions at the end of the word (-1 is the last character). When this setting is used, no other characters/positions will allow splits (useful for languages with a closed vocabulary of affixes). See below for format.
