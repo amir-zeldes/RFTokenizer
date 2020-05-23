@@ -11,6 +11,3 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-   
-   For licenses of training data included in data/ and pred/, see the individual corpus licenses 
-   (e.g. Universal Dependencies UD_Hebrew, UD_Arabic-PADT, UD_Coptic-Scriptorium)

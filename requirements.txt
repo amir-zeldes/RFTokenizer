@@ -1,5 +1,6 @@
 scikit-learn
+joblib
 numpy
 pandas
-xgboost
+xgboost==0.81
 hyperopt
