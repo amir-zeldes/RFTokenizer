@@ -16,10 +16,10 @@ __license__ = "Apache 2.0"
 import sys, os, io, random, re
 import numpy as np
 import pandas as pd
+import joblib
 
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.externals import joblib
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
 from collections import defaultdict
@@ -512,8 +512,11 @@ class RFTokenizer:
 		"""
 
 		if model_path is None:
-			# Default model path for a language is the language name, extension ".sm2" for Python 2 or ".sm3" for Python 3
-			model_path = self.lang + ".sm" + str(sys.version_info[0])
+			if self.model is None:
+				# Default model path for a language is the language name, extension ".sm2" for Python 2 or ".sm3" for Python 3
+				model_path = self.lang + ".sm" + str(sys.version_info[0])
+			else:
+				model_path = self.model
 		if not os.path.exists(model_path):  # Try loading from calling directory
 			model_path = os.path.dirname(sys.argv[0]) + self.lang + ".sm" + str(sys.version_info[0])
 		if not os.path.exists(model_path):  # Try loading from tokenize_rf.py directory
