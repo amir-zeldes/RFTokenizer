@@ -4,7 +4,10 @@
 
 import atexit
 import sys
-from time import clock
+try:
+    from time import clock
+except:
+    from time import time as clock
 from functools import reduce
 
 def secondsToStr(t):
