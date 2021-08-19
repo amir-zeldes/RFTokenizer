@@ -38,9 +38,10 @@ class FlairTagger:
                 model_dir = script_dir + "models" + os.sep
                 if not os.path.exists(model_dir + lang_prefix + ".seg"):
                     sys.stderr.write("! Model file " + model_dir + lang_prefix + ".seg not found\n")
-                    sys.stderr.write("! Attempting to download it...")
+                    sys.stderr.write("! Attempting to download it... (this could take a while)\n")
                     url = "https://corpling.uis.georgetown.edu/amir/download/heb_models_v2/" + lang_prefix + ".seg"
                     urlretrieve(url, model_dir + lang_prefix + ".seg")
+                    sys.stderr.write("! Done!\n")
                 self.model = SequenceTagger.load(model_dir + lang_prefix + ".seg")
             else:
                 self.model = SequenceTagger.load(model_dir + lang_prefix + ".flair")
