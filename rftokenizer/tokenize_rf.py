@@ -7,7 +7,7 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2019, Amir Zeldes"
 __license__ = "Apache 2.0"
@@ -17,10 +17,12 @@ import sys, os, io, random, re
 import numpy as np
 import pandas as pd
 import joblib
+import logging
+
+logging.disable(logging.INFO)
 
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
 from collections import defaultdict
 try:
@@ -218,7 +220,8 @@ def multicol_transform(dframe, columns, all_encoders_):
 
 
 #@profile
-def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None, train=False, freqs=None):
+def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None,
+			 train=False, freqs=None, bert_pred=None):
 
 	output = []
 
@@ -320,6 +323,10 @@ def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp
 			f_remain = freqs[remaining_substr]
 			f_whole = freqs[bound_group] + 0.0000000001  # Delta smooth whole
 			char_feats += [f_sofar*f_remain/f_whole]
+
+		if bert_pred is not None:
+			char_feats += [bert_pred]
+			headers += ["bert"]
 
 		if grp_id > -1:
 			char_feats += [grp_id]
@@ -525,14 +532,37 @@ class RFTokenizer:
 			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + "models" + os.sep + self.lang + ".sm" + str(sys.version_info[0])
 		#sys.stderr.write("Module: " + self.__module__ + "\n")
 		self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
+		if "bert" in self.cat_labels:
+			from flair_pos_tagger import FlairTagger
+			self.bert = FlairTagger(seg=True)
+		else:
+			self.bert = None
 		default_pos_lookup = defaultdict(lambda :"_")
 		default_pos_lookup.update(pos_lookup)
 		self.pos_lookup = default_pos_lookup
 		self.read_conf_file()
 		self.loaded = True
 
+	@staticmethod
+	def words2sents(word_list):
+		"""
+		Break up stream of words for transformer-based sequence tagger feature generation. Sequences are broken
+		at periods or a maximum length of 100 tokens (having exactly real sentences is not too important here)
+
+		:param word_list List containing whitespace delimited bound group token strings
+		"""
+		sents = []
+		words = []
+		for word in word_list:
+			words.append(word)
+			if word == "." or len(words) > 100:
+				sents.append("\n".join(words))
+				words = []
+		return sents
+
 	def train(self, train_file, lexicon_file=None, freq_file=None, test_prop=0.1, output_importances=False, dump_model=False,
-			  cross_val_test=False, output_errors=False, ablations=None, dump_transformed_data=False, do_shuffle=True, conf=None):
+			  cross_val_test=False, output_errors=False, ablations=None, dump_transformed_data=False, do_shuffle=True, conf=None,
+			  bert=False):
 		"""
 
 		:param train_file: File with segmentations to train on in one of the two formats described in make_prev_next()
@@ -549,6 +579,7 @@ class RFTokenizer:
 		:param do_shuffle: Whether training data is shuffled after context extraction but before test partition is created
 				(this has no effect if training on whole training corpus)
 		:param conf: configuration file for training (by default: <MODELNAME>.conf)
+		:param bert: use BERT-based flair classifier in inputs (pretrained model defaults to: models/<MODELNAME>.seg
 		:return: None
 		"""
 
@@ -589,6 +620,22 @@ class RFTokenizer:
 		# Make into four cols: prev \t next \t current \t segmented (unless already receiving such a table, for shuffled datasets)
 		if seg_table[0].count("\t") == 1:
 			seg_table = make_prev_next(seg_table)
+		elif bert:
+			sys.stderr.write("WARN: training data in 4 column format suggests shuffled training data, but bert-based classifier is used.\nIf training data is shuffled, bert sequence predictions will be unreliable!\n")
+
+		if bert:  # Collect BERT predictions based on middle column as sequence; will backfire if training data is shuffled!
+			from flair_pos_tagger import FlairTagger
+			lines = [l.split("\t")[2] for l in seg_table if "\t" in l]
+			sents = self.words2sents(lines)
+			neural_seg = FlairTagger(seg=True)
+			bert_preds = neural_seg.predict("\n\n".join(sents), in_format="flair", out_format="xg",
+											as_text=True, seg=True)
+			bert_preds = [line.split("\t")[0] for line in bert_preds.split("\n") if "\t" in line]
+			if "WBB" not in bert_preds:
+				bert_preds = ["WBB"] + bert_preds  # Rarest tag for OOV token
+			else:
+				bert_preds = ["O"] + bert_preds
+			cat_labels.append("bert")
 
 		# Ensure OOV symbol is in data
 		seg_table = ["_\t_\t_\t_"] + seg_table
@@ -609,7 +656,8 @@ class RFTokenizer:
 
 		seg_table, shuffle_mapping = zip(*zipped)
 
-		headers = bg2array("_________",prev_group="_",next_group="_",print_headers=True,is_test=1,grp_id=1,config=letter_config)
+		b = None if not bert else bert
+		headers = bg2array("_________",prev_group="_",next_group="_",print_headers=True,is_test=1,grp_id=1,config=letter_config,bert_pred=b)
 
 		word_idx = -1
 		bug_rows = []
@@ -663,7 +711,8 @@ class RFTokenizer:
 				for c in encoded_group:
 					c[headers.index("is_test")] = is_test  # Make sure that this group's test index is correctly assigned
 			else:
-				encoded_group = bg2array(bound_group,prev_group=prev_group,next_group=next_group,is_test=is_test,grp_id=word_idx,config=letter_config,train=True,freqs=freqs)
+				bert_pred = bert_preds[word_idx] if bert else None
+				encoded_group = bg2array(bound_group,prev_group=prev_group,next_group=next_group,is_test=is_test,grp_id=word_idx,config=letter_config,train=True,freqs=freqs,bert_pred=bert_pred)
 				encoding_cache[group_type] = encoded_group
 			all_encoded_groups += encoded_group
 			data_y += segs2array(segmentation)
@@ -764,7 +813,11 @@ class RFTokenizer:
 			clf = XGBClassifier(n_estimators=170,n_jobs=3,random_state=42,max_depth=24,subsample=1.0,colsample_bytree=0.8,eta=.13,gamma=.15)
 		else:
 			# Good parameters for Hebrew/Coptic
-			clf = XGBClassifier(n_estimators=230,n_jobs=3,random_state=42,max_depth=17,subsample=1.0,colsample_bytree=0.6,eta=.07,gamma=.09)
+			if bert:
+				clf = XGBClassifier(n_estimators=210, n_jobs=3, random_state=42, max_depth=17, subsample=1.0,
+									colsample_bytree=0.6, eta=.02, gamma=.18)
+			else:
+				clf = XGBClassifier(n_estimators=230,n_jobs=3,random_state=42,max_depth=17,subsample=1.0,colsample_bytree=0.6,eta=.07,gamma=.09)
 
 		if cross_val_test:
 			# Modify code to tune hyperparameters
@@ -842,11 +895,10 @@ class RFTokenizer:
 			for name, importance in sorted_zip:
 				print(name, "=", importance)
 
-
 		if dump_model:
 			plain_dict_pos_lookup = {}
 			plain_dict_pos_lookup.update(pos_lookup)
-			joblib.dump((clf, num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]), compress=3)
+			joblib.dump((clf, num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]))#, compress=3)
 			print("o Dumped trained model to " + self.lang + ".sm" + str(sys.version_info[0]))
 
 	def rf_tokenize(self, data, sep="|", indices=None, proba=False):
@@ -879,7 +931,8 @@ class RFTokenizer:
 
 		encoded_groups = []
 
-		headers = bg2array("_________",prev_group="_",next_group="_",print_headers=True,config=LetterConfig())
+		b = None if self.bert is None else True
+		headers = bg2array("_________",prev_group="_",next_group="_",print_headers=True,config=LetterConfig(),bert_pred=b)
 		word_lengths = []
 		cursor = 0
 
@@ -889,6 +942,12 @@ class RFTokenizer:
 				letters[header] = multicol_dict["encoder_dict"][header].classes_
 
 		letter_config = LetterConfig(letters, self.conf["vowels"], self.pos_lookup)
+
+		if self.bert is not None:
+			sents = self.words2sents(data)
+			bert_preds = self.bert.predict("\n\n".join(sents), in_format="flair", out_format="xg",
+											as_text=True, seg=True)
+			bert_preds = [line.split("\t")[0] for line in bert_preds.split("\n") if "\t" in line]
 
 		j = 0
 		for i, word in enumerate(data):
@@ -916,7 +975,9 @@ class RFTokenizer:
 			if group_type in self.test_cache:  # No need to encode, an identical featured group has already been seen
 				encoded_group = self.test_cache[group_type]
 			else:
-				encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,freqs=freqs)
+				bert_pred = bert_preds[i] if self.bert is not None else None
+				encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,
+										 freqs=freqs,bert_pred=bert_pred)
 				self.test_cache[group_type] = encoded_group
 			encoded_groups += encoded_group
 			word_lengths.append(cursor + len(word))
@@ -1007,6 +1068,7 @@ if __name__ == "__main__":
 	parser.add_argument("-l","--lexicon",action="store",default=None,help="lexicon file to use in training")
 	parser.add_argument("-f","--freqs",action="store",default=None,help="frequency file to use in training")
 	parser.add_argument("-c","--conf",action="store",default=None,help="configuration file to use in training")
+	parser.add_argument("-b","--bert",action="store_true",help="use BERT based classifier as training feature (train classifier with flair_pos_tagger.py)")
 	parser.add_argument("-i","--importances",action="store_true",help="output variable importances during test phrase of training",default=False)
 	parser.add_argument("-p","--proportion",action="store",default=0.1,type=float,choices=[FloatProportion(0.0, 1.0)],help="Proportion of training data to reserve for testing")
 	parser.add_argument("-e","--errors",action="store_true",help="Whether to output errors during training evaluation to errs.txt")
@@ -1031,12 +1093,14 @@ if __name__ == "__main__":
 			do_dump = False
 		rf_tok.train(train_file=options.file, lexicon_file=options.lexicon, dump_model=do_dump, freq_file=options.freqs, output_errors=options.errors,
 					 output_importances=options.importances, test_prop=options.proportion, ablations=options.ablations, conf=options.conf,
-					 cross_val_test=options.optimize)
+					 cross_val_test=options.optimize, bert=options.bert)
 		if options.retrain_all:
 			print("\no Retraining on complete data set (no test partition)...")
 			rf_tok.train(train_file=options.file, lexicon_file=options.lexicon, dump_model=True, output_importances=False,
 						 freq_file=options.freqs, test_prop=0.0, ablations=options.ablations, conf=options.conf)
 		sys.exit()
+	elif options.bert:
+		sys.stderr.write("WARN: option --bert was used in predict mode; this has no effect, since saved models determine whether --bert is used\n")
 
 	file_ = options.file
 	data = io.open(file_, encoding="utf8").read().strip().split("\n")

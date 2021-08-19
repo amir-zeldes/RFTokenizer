@@ -53,7 +53,16 @@ Arabic data is derived from the Prague Arabic Dependency Treebank (UD_Arabic-PAD
 
 ## Performance
 
-Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits):
+Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits), using BERT-based predictions and lexicon data as features:
+
+```
+Perfect word forms: 0.9918367346938776
+Precision: 0.9885304659498207
+Recall: 0.9864091559370529
+F-Score: 0.9874686716791979
+```
+
+Or without BERT:
 
 ```
 Perfect word forms: 0.9821036106750393
@@ -62,7 +71,7 @@ Recall: 0.967103694874851
 F-Score: 0.9716201652496708
 ```
 
-Prague Arabic Dependency Treebank (UD_Arabic-PADT):
+Prague Arabic Dependency Treebank (UD_Arabic-PADT, currently without BERT):
 
 ```
 Perfect word forms: 0.9846204866724703
@@ -71,7 +80,7 @@ Recall: 0.9874853343762221
 F-Score: 0.9809158451901132
 ```
 
-Coptic Scriptorium (UD_Coptic-Scriptorium):
+Coptic Scriptorium (UD_Coptic-Scriptorium, currently without BERT):
 
 ```
 Perfect word forms: 0.952007602755999
@@ -87,6 +96,7 @@ The tokenizer needs:
   * numpy
   * pandas
   * xgboost
+  * flair (only if BERT is used)
 
 And if you want to run hyperparameter optimization:
   * hyperopt
@@ -152,6 +162,8 @@ Training is invoked like this:
 ```
 
 This will produce `LANG.sm3`, the compiled model (or `.sm2` under Python 2). If `<CONF>` is not supplied, it is assumed to be called `<LANG>.conf`.
+
+If you wish to use BERT features for classification you must *first* train a flair classifier using `flair_pos_tagger.py`, which trains on .conllu data, and name its model `<LANG>.seg`, which should be placed in `models/`. Then train RFTokenizer using the `--bert` option. **Important note**: the data used to train the BERT classifier must be disjoint from the data used to train RFTokenizer, or else it will produce over-reliance (RFTokenizer will learn that BERT is always right, since BERT magically predicts everything correctly, given that it has already seen this training data). Alternatively, you can use a k-fold training regime.
 
 ### Configuration
 
