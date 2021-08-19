@@ -267,7 +267,8 @@ class FlairTagger:
         print(tag_dictionary)
 
         # 4. initialize embeddings
-        embeddings: TransformerWordEmbeddings = TransformerWordEmbeddings('onlplab/alephbert-base',)
+        # Set language specific transformer embeddings here
+        embeddings: TransformerWordEmbeddings = TransformerWordEmbeddings('onlplab/alephbert-base',)  # AlephBERT for Hebrew
         if positional:
             positions: OneHotEmbeddings = OneHotEmbeddings(corpus=corpus, field="super", embedding_length=5)
             if tags:
@@ -424,7 +425,8 @@ class FlairTagger:
 
 
 if __name__ == "__main__":
-    # To train a segmentation category predictor for RFTokenizer set the conllu root above and use:
+    # To train a segmentation category predictor for RFTokenizer set the conllu root above, choose
+    # the transformer in TransformerWordEmbeddings above and use:
     # python flair_pos_tagger.py --seg -i conllu
     p = ArgumentParser()
     p.add_argument("-m","--mode",choices=["train","predict"],default="predict")
