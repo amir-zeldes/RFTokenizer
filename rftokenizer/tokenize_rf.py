@@ -533,7 +533,10 @@ class RFTokenizer:
 		#sys.stderr.write("Module: " + self.__module__ + "\n")
 		self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
 		if "bert" in self.cat_labels:
-			from flair_pos_tagger import FlairTagger
+			try:
+				from flair_pos_tagger import FlairTagger
+			except ImportError:
+				from .flair_pos_tagger import FlairTagger
 			self.bert = FlairTagger(seg=True)
 		else:
 			self.bert = None
@@ -626,7 +629,10 @@ class RFTokenizer:
 			sys.stderr.write("WARN: training data in 4 column format suggests shuffled training data, but bert-based classifier is used.\nIf training data is shuffled, bert sequence predictions will be unreliable!\n")
 
 		if bert:  # Collect BERT predictions based on middle column as sequence; will backfire if training data is shuffled!
-			from flair_pos_tagger import FlairTagger
+			try:
+				from flair_pos_tagger import FlairTagger
+			except ImportError:
+				from .flair_pos_tagger import FlairTagger
 			lines = [l.split("\t")[2] for l in seg_table if "\t" in l]
 			sents = self.words2sents(lines)
 			neural_seg = FlairTagger(seg=True)
