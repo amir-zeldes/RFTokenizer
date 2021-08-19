@@ -71,6 +71,15 @@ Recall: 0.967103694874851
 F-Score: 0.9716201652496708
 ```
 
+Scores on Hebrew Wiki5K (out-of-domain, with BERT):
+
+```
+Perfect word forms: 0.9907224634820371
+Precision: 0.9851075565361279
+Recall: 0.9845644983461963
+F-Score: 0.9848359525778881
+```
+
 Prague Arabic Dependency Treebank (UD_Arabic-PADT, currently without BERT):
 
 ```
