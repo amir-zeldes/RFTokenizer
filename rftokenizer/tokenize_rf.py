@@ -558,6 +558,8 @@ class RFTokenizer:
 			if word == "." or len(words) > 100:
 				sents.append("\n".join(words))
 				words = []
+		if len(words) > 0:
+			sents.append("\n".join(words))
 		return sents
 
 	def train(self, train_file, lexicon_file=None, freq_file=None, test_prop=0.1, output_importances=False, dump_model=False,
