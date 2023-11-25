@@ -6,6 +6,7 @@ This module trains flair sequence labelers to predict POS and deprel for OTHER m
 
 
 from argparse import ArgumentParser
+import flair
 from flair.data import Corpus, Sentence
 from flair.datasets import ColumnCorpus
 from flair.embeddings import OneHotEmbeddings, TransformerWordEmbeddings, StackedEmbeddings
@@ -22,9 +23,12 @@ else:
 
 seed(42)
 
+flair_version = int(flair.__version__.split(".")[1])
+
 script_dir = os.path.dirname(os.path.realpath(__file__)) + os.sep
-model_dir = script_dir + ".." + os.sep + "models" + os.sep
+model_dir = script_dir + ".." + os.sep + "models_311" + os.sep
 CONLLU_ROOT = "conllu" + os.sep  # Path to UD .conllu corpus repo directory
+CONLLU_ROOT = "C:\\Uni\\Corpora\\Hebrew\\UD_Hebrew-joint" + os.sep  # Path to UD .conllu corpus repo directory
 TARGET_FEATS = {}  # If using this tagger for specific features, specify them here
 lang_prefix = "heb"  # Prefix for the language name in the model, e.g. heb for Hebrew
 
@@ -39,7 +43,7 @@ class FlairTagger:
                 if not os.path.exists(model_dir + lang_prefix + ".seg"):
                     sys.stderr.write("! Model file " + model_dir + lang_prefix + ".seg not found\n")
                     sys.stderr.write("! Attempting to download it... (this could take a while)\n")
-                    url = "https://corpling.uis.georgetown.edu/amir/download/heb_models_v2/" + lang_prefix + ".seg"
+                    url = "https://gucorpling.org/amir/download/heb_models_v2/" + lang_prefix + ".seg"
                     urlretrieve(url, model_dir + lang_prefix + ".seg")
                     sys.stderr.write("! Done!\n")
                 self.model = SequenceTagger.load(model_dir + lang_prefix + ".seg")
@@ -94,7 +98,7 @@ class FlairTagger:
                 tag = "WBY"
             elif "XS" in tag:
                 tag = "X"
-            return tag
+            return tag.replace("SS","S")
 
         def conllu2segs(conllu, target="affixes"):
             super_length = 0
@@ -264,7 +268,10 @@ class FlairTagger:
             tag_type = "seg"
 
         # 3. make the tag dictionary from the corpus
-        tag_dictionary = corpus.make_tag_dictionary(tag_type=tag_type)
+        if flair_version > 8:
+            tag_dictionary = corpus.make_label_dictionary(label_type=tag_type)
+        else:
+            tag_dictionary = corpus.make_tag_dictionary(tag_type=tag_type)
         print(tag_dictionary)
 
         # 4. initialize embeddings
@@ -291,8 +298,8 @@ class FlairTagger:
                                                 embeddings=stacked,
                                                 tag_dictionary=tag_dictionary,
                                                 tag_type=tag_type,
-                                                use_crf=True,
-                                                use_rnn=True)
+                                                use_crf=False,
+                                                use_rnn=False)
 
         # 6. initialize trainer
         from flair.trainers import ModelTrainer
@@ -301,8 +308,8 @@ class FlairTagger:
 
         # 7. start training
         trainer.train(script_dir + "pos-dependencies" + os.sep + 'flair_tagger',
-                      learning_rate=0.1,
-                      mini_batch_size=15,
+                      learning_rate=0.1
+                      mini_batch_size=24,
                       max_epochs=150)
 
     def predict(self, in_path=None, in_format="flair", out_format="conllu", as_text=False, tags=False, seg=False):
@@ -325,7 +332,11 @@ class FlairTagger:
         for line in data.split("\n"):
             if len(line.strip())==0:
                 if len(words) > 0:
-                    sents.append(Sentence(" ".join(words),use_tokenizer=lambda x:x.split(" ")))
+                    if flair_version > 8:
+                        tokenizer = False
+                    else:
+                        tokenizer = lambda x:x.split(" ")
+                    sents.append(Sentence(" ".join(words),use_tokenizer=tokenizer))
                     for i, word in enumerate(sents[-1]):
                         if not seg:
                             word.add_label("super",positions[i])
@@ -371,7 +382,10 @@ class FlairTagger:
                         true_pos.append(line.split("\t")[4])
 
         # predict tags and print
-        model.predict(sents)#, all_tag_prob=True)
+        if flair_version > 8:
+            model.predict(sents, force_token_predictions=True, return_probabilities_for_all_classes=True)
+        else:
+            model.predict(sents)  # , all_tag_prob=True)
 
         preds = []
         scores = []
@@ -382,8 +396,13 @@ class FlairTagger:
                     pred = tok.labels[2].value
                     score = str(tok.labels[2].score)
                 elif seg:
-                    pred = tok.labels[0].value
-                    score = str(tok.labels[0].score)
+                    if flair_version > 8:
+                        pred = tok.labels[0].value if len(tok.labels)>0 else "O"
+                        score = tok.labels[0].score if len(tok.labels) > 0 else "1.0"
+                    else:
+                        label = tok.labels[0]
+                        pred = label.value
+                        score = str(label.score)
                 else:
                     pred = tok.labels[1].value
                     score = str(tok.labels[1].score)

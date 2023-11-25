@@ -7,7 +7,7 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "2.0.1"
+__version__ = "2.1.1"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2019, Amir Zeldes"
 __license__ = "Apache 2.0"
@@ -762,8 +762,7 @@ class RFTokenizer:
 					if found:
 						sys.stderr.write("\t"+feat+"\n")
 					else:
-						sys.stderr.write("\tERR: can't find ablation feature " + feat + "\n")
-						sys.exit()
+						sys.stderr.write("\tWARN: can't find ablation feature " + feat + "\n")
 
 		sys.stderr.write("o Creating dataframe\n")
 		data_x = pd.DataFrame(all_encoded_groups, columns=headers)
@@ -965,7 +964,7 @@ class RFTokenizer:
 			prev_group = data[i-1] if i > 0 else "_"
 			next_group = data[i+1] if i < len(data)-1 else "_"
 
-			# Protect again zero length input
+			# Protect against zero length input
 			if len(prev_group) == 0:
 				prev_group = "_"
 			if len(next_group) == 0:
@@ -973,7 +972,9 @@ class RFTokenizer:
 			if len(word) == 0:
 				word = "_"
 
-			if self.regex_tok is not None:
+			if len(word) == 1:
+				do_not_tok_indices.add(j)
+			elif self.regex_tok is not None:
 				for f, r in self.regex_tok:
 					if f.match(word) is not None:
 						do_not_tok_indices.add(j)
@@ -1014,15 +1015,16 @@ class RFTokenizer:
 
 		for word_idx, segmentation in enumerate(p_words):
 			tokenized = ""
-			if word_idx == 90:
-				a=5
 			if data[word_idx] == "":
 				tokenized = ""
 			else:
 				if word_idx in do_not_tok_indices:
 					word = data[word_idx]
-					for f, r in self.regex_tok:
-						word = f.sub(r, word)
+					if len(word) == 1:
+						pass
+					else:
+						for f, r in self.regex_tok:
+							word = f.sub(r, word)
 					tokenized += word
 					if proba:
 						out_proba = 1.0
@@ -1105,7 +1107,7 @@ if __name__ == "__main__":
 		if options.retrain_all:
 			print("\no Retraining on complete data set (no test partition)...")
 			rf_tok.train(train_file=options.file, lexicon_file=options.lexicon, dump_model=True, output_importances=False,
-						 freq_file=options.freqs, test_prop=0.0, ablations=options.ablations, conf=options.conf)
+						 freq_file=options.freqs, test_prop=0.0, ablations=options.ablations, conf=options.conf, bert=options.bert)
 		sys.exit()
 	elif options.bert:
 		sys.stderr.write("WARN: option --bert was used in predict mode; this has no effect, since saved models determine whether --bert is used\n")
