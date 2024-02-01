@@ -53,7 +53,16 @@ Arabic data is derived from the Prague Arabic Dependency Treebank (UD_Arabic-PAD
 
 ## Performance
 
-Current scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits), using BERT-based predictions and lexicon data as features:
+Realistic scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits), using BERT-based predictions and lexicon data as features, trained jointly on SPMRL and other UD Hebrew IAHLT data:
+
+```
+Perfect word forms: 0.9933281004709577
+Precision: 0.9923298178331735
+Recall: 0.9871244635193133
+F-Score: 0.9897202964379631
+```
+
+Clean experimental scores on the SPMRL Hebrew dataset (UD_Hebrew, V1 splits), using BERT-based predictions and lexicon data as features and training only on SPMRL:
 
 ```
 Perfect word forms: 0.9918367346938776
@@ -62,7 +71,7 @@ Recall: 0.9864091559370529
 F-Score: 0.9874686716791979
 ```
 
-Or without BERT:
+Or the latter without BERT:
 
 ```
 Perfect word forms: 0.9821036106750393
@@ -71,7 +80,7 @@ Recall: 0.967103694874851
 F-Score: 0.9716201652496708
 ```
 
-Scores on Hebrew Wiki5K (out-of-domain, with BERT):
+Scores on Hebrew Wiki5K (out-of-domain, with BERT, train on SPMRL):
 
 ```
 Perfect word forms: 0.9907224634820371
