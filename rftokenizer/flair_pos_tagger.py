@@ -43,7 +43,7 @@ class FlairTagger:
                 if not os.path.exists(model_dir + lang_prefix + ".seg"):
                     sys.stderr.write("! Model file " + model_dir + lang_prefix + ".seg not found\n")
                     sys.stderr.write("! Attempting to download it... (this could take a while)\n")
-                    url = "https://gucorpling.org/amir/download/heb_models_v2/" + lang_prefix + ".seg"
+                    url = "https://gucorpling.org/amir/download/heb_models_v4/" + lang_prefix + ".seg"
                     urlretrieve(url, model_dir + lang_prefix + ".seg")
                     sys.stderr.write("! Done!\n")
                 self.model = SequenceTagger.load(model_dir + lang_prefix + ".seg")
@@ -308,7 +308,7 @@ class FlairTagger:
 
         # 7. start training
         trainer.train(script_dir + "pos-dependencies" + os.sep + 'flair_tagger',
-                      learning_rate=0.1
+                      learning_rate=0.1,
                       mini_batch_size=24,
                       max_epochs=150)
 
