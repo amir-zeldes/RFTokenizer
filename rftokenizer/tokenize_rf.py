@@ -7,7 +7,7 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2024, Amir Zeldes"
 __license__ = "Apache 2.0"
@@ -20,6 +20,7 @@ import joblib
 import logging
 
 logging.disable(logging.INFO)
+random.seed(42)
 
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import accuracy_score
@@ -221,13 +222,15 @@ def multicol_transform(dframe, columns, all_encoders_):
 
 #@profile
 def bg2array(bound_group, prev_group="", next_group="", print_headers=False, grp_id=-1, is_test=-1, config=None,
-			 train=False, freqs=None, bert_pred=None):
+			 train=False, freqs=None, bert_pred=None, prune_lex=0.1):
 
 	output = []
 
 	letters = config.letters
 	vowels = config.vowels
 	pos_lookup = config.pos_lookup
+	if prune_lex and is_test < 1 and train:
+		pos_lookup = config.pruned_pos_lookup
 
 	group_in_lex = pos_lookup[bound_group] if pos_lookup[bound_group] in letters["group_in_lex"] or train else "_"
 
@@ -567,7 +570,7 @@ class RFTokenizer:
 
 	def train(self, train_file, lexicon_file=None, freq_file=None, test_prop=0.1, output_importances=False, dump_model=False,
 			  cross_val_test=False, output_errors=False, ablations=None, dump_transformed_data=False, do_shuffle=True, conf=None,
-			  bert=False):
+			  bert=False, prune_lex=0.1):
 		"""
 
 		:param train_file: File with segmentations to train on in one of the two formats described in make_prev_next()
@@ -576,7 +579,7 @@ class RFTokenizer:
 		:param test_prop: (0.0 -- 0.99..) Proportion of shuffled data to test on
 		:param output_importances: Whether to print feature importances (only if test proportion > 0.0)
 		:param dump_model: Whether to dump trained model to disk via joblib
-		:param cross_val_test: Whether to perform cross-validation for hyper parameter optimization
+		:param cross_val_test: Whether to perform cross-validation for hyperparameter optimization
 		:param output_errors: Whether to output prediction errors to a file 'errs.txt'
 		:param ablations: Comma separated string of feature names to ablate, e.g. "freq_ratio,prev_grp_pos,next_grp_pos"
 		:param dump_transformed_data: If true, transform data to a pandas dataframe and write to disk, then quit
@@ -584,7 +587,9 @@ class RFTokenizer:
 		:param do_shuffle: Whether training data is shuffled after context extraction but before test partition is created
 				(this has no effect if training on whole training corpus)
 		:param conf: configuration file for training (by default: <MODELNAME>.conf)
-		:param bert: use BERT-based flair classifier in inputs (pretrained model defaults to: models/<MODELNAME>.seg
+		:param bert: use BERT-based flair classifier in inputs (pretrained model defaults to: models/<MODELNAME>.seg)
+		:param prune_lex: proportion of hapax legomena to prune from lexicon during training (to avoid overfitting lexicon)
+
 		:return: None
 		"""
 
@@ -639,7 +644,9 @@ class RFTokenizer:
 			bert_preds = neural_seg.predict("\n\n".join(sents), in_format="flair", out_format="xg",
 											as_text=True, seg=True)
 			bert_preds = [line.split("\t")[0] for line in bert_preds.split("\n") if "\t" in line]
-			if "WBB" not in bert_preds:
+			if self.model=="cop" and "CDO" not in bert_preds:
+				bert_preds = ["CDO"] + bert_preds  # Rarest tag for OOV token
+			elif "WBB" not in bert_preds:
 				bert_preds = ["WBB"] + bert_preds  # Rarest tag for OOV token
 			else:
 				bert_preds = ["O"] + bert_preds
@@ -695,6 +702,27 @@ class RFTokenizer:
 		test_indices = list(range(len(seg_table)))[0::step] if step > 0 else []
 		test_rows = []
 
+		# Prune part of lexicon during training if desired
+		letter_config.pruned_pos_lookup = defaultdict(lambda: "_")
+		if prune_lex:
+			prune_count = 0
+			train_freqs = defaultdict(int)
+			for row_idx, row in enumerate(seg_table):
+				if row_idx not in test_indices:
+					_, _, bound_group, segmentation = row.split("\t")
+					train_freqs[bound_group] += 1
+					if "|" in segmentation:
+						for seg in segmentation.split("|"):
+							train_freqs[seg] += 1
+			for word in pos_lookup:
+				if train_freqs[word] > 1:
+					letter_config.pruned_pos_lookup[word] = pos_lookup[word]
+				elif random.random() > prune_lex:  # Keep (1-prune_lex) proportion of hapax legomena in lexicon for training
+					letter_config.pruned_pos_lookup[word] = pos_lookup[word]
+				else:
+					prune_count += 1
+			sys.stderr.write("o Pruning lexicon during training (" + str(prune_count) + " items)\n")
+
 		for row_idx, row in enumerate(seg_table):
 			is_test = 1 if row_idx in test_indices else 0
 
@@ -720,7 +748,11 @@ class RFTokenizer:
 					c[headers.index("is_test")] = is_test  # Make sure that this group's test index is correctly assigned
 			else:
 				bert_pred = bert_preds[word_idx] if bert else None
-				encoded_group = bg2array(bound_group,prev_group=prev_group,next_group=next_group,is_test=is_test,grp_id=word_idx,config=letter_config,train=True,freqs=freqs,bert_pred=bert_pred)
+				if bert_pred in ["CDO"]:
+					bert_pred = "X"
+				encoded_group = bg2array(bound_group,prev_group=prev_group,next_group=next_group,is_test=is_test,
+										 grp_id=word_idx,config=letter_config,train=True,freqs=freqs,bert_pred=bert_pred,
+										 prune_lex=prune_lex)
 				encoding_cache[group_type] = encoded_group
 			all_encoded_groups += encoded_group
 			data_y += segs2array(segmentation)
@@ -985,6 +1017,8 @@ class RFTokenizer:
 				encoded_group = self.test_cache[group_type]
 			else:
 				bert_pred = bert_preds[i] if self.bert is not None else None
+				if bert_pred in ["CDO"]:
+					bert_pred = "X"
 				encoded_group = bg2array(word,prev_group=prev_group,next_group=next_group,config=letter_config,
 										 freqs=freqs,bert_pred=bert_pred)
 				self.test_cache[group_type] = encoded_group
@@ -1085,6 +1119,8 @@ if __name__ == "__main__":
 	parser.add_argument("-r","--retrain_all",action="store_true",help="re-run training on entire dataset (train+test) after testing")
 	parser.add_argument("-a","--ablations",action="store",default=None,help="comma separated feature names to ablate in experiments")
 	parser.add_argument("-o","--optimize",action="store_true",help="run hyperparameter optimization",default=False)
+	parser.add_argument("--prune",action="store",type=float, choices=[FloatProportion(0.0, 1.0)],
+						help="proportion of hapax legomena to exclude from lexicon during training", default=0.1)
 	parser.add_argument("-v","--version",action="store_true",help="print version number and quit")
 	parser.add_argument("file",action="store",help="file to tokenize or train on")
 

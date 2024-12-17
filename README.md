@@ -8,7 +8,7 @@ For full NLP pipelines for morphologically rich languages (MRLs) based on this t
   * Coptic: http://www.github.com/CopticScriptorium/coptic-nlp/
   * Hebrew: http://www.github.com/amir-zeldes/HebPipe/
   
-Pretrained models are provided for **Coptic**, **Arabic** and **Hebrew**
+Pretrained models are provided for **Coptic** (Sahidic and Bohairic dialects), **Arabic** and **Hebrew**
 
 ## Installation
 
@@ -276,6 +276,7 @@ The frequency file is a tab delimited text file with one word form per line and 
 ### Other training options
 
   * You can specify a train/test split proportion using e.g. `-p 0.2` (default test partition is 0.1 of the data)
+  * You can specify how much of the lexicon to prune during training for example with `--prune 0.2` (by default, 0.1 of the lexicon entries are withheld during training to simulate unseen items at test time; you can set `--prune 0.0` to deactivate this)
   * Variable importances can be outputted using `-i`
   * You can perform retraining on the entire dataset after evaluation of feature importances using `-r`
   * You can ablate certain features using `-a` and a comma separated list of features
