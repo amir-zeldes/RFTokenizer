@@ -4,6 +4,7 @@ Simple utility to convert conllu files to tab-separated files with segments
 
 import io, os, sys, re
 from glob import glob
+from argparse import ArgumentParser
 
 def get_segs(conllu):
     super_length = 0
@@ -57,7 +58,17 @@ def get_segs(conllu):
             labels = []
     return "\n".join(sents)
 
-files = glob("*.conllu")
+
+p = ArgumentParser()
+p.add_argument("--file", help="Path to conllu file", default=None)
+
+args = p.parse_args()
+
+if args.file:
+    files = [args.file]
+else:
+    files = glob("*.conllu")
+
 
 for file_ in files:
     seg_data = get_segs(io.open(file_).read())
