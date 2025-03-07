@@ -7,7 +7,7 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2024, Amir Zeldes"
 __license__ = "Apache 2.0"
