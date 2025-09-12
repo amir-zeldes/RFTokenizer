@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'rftokenizer',
   packages = find_packages(),
-  version = '2.3.2',
+  version = '2.4.0',
   description = 'A character-wise tokenizer for morphologically rich languages',
   author = 'Amir Zeldes',
   author_email = 'amir.zeldes@georgetown.edu',

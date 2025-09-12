@@ -7,17 +7,24 @@ RFTokenizer - Automatic segmentation of complex word forms
 for Morphologically Rich Languages (MRLs)
 """
 
-__version__ = "2.3.2"
+__version__ = "2.4.0"
 __author__ = "Amir Zeldes"
 __copyright__ = "Copyright 2018-2024, Amir Zeldes"
 __license__ = "Apache 2.0"
 
 
-import sys, os, io, random, re
+import sys, os, io, random, re, platform
 import numpy as np
 import pandas as pd
 import joblib
 import logging
+import xgboost as xgb
+
+if not platform.system().lower().startswith("win"):
+    # Prevent problems with pathlib in posix when restoring models trained on Windows
+    import pathlib
+    pathlib.WindowsPath = pathlib.PosixPath
+
 
 logging.disable(logging.INFO)
 random.seed(42)
@@ -528,13 +535,21 @@ class RFTokenizer:
 			else:
 				model_path = self.model
 		if not os.path.exists(model_path):  # Try loading from calling directory
-			model_path = os.path.dirname(sys.argv[0]) + self.lang + ".sm" + str(sys.version_info[0])
+			model_path = os.path.dirname(sys.argv[0]) + os.sep + self.lang + ".sm" + str(sys.version_info[0])
 		if not os.path.exists(model_path):  # Try loading from tokenize_rf.py directory
 			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + self.lang + ".sm" + str(sys.version_info[0])
 		if not os.path.exists(model_path):  # Try loading from models/ directory
 			model_path = os.path.dirname(os.path.realpath(__file__)) + os.sep + "models" + os.sep + self.lang + ".sm" + str(sys.version_info[0])
 		#sys.stderr.write("Module: " + self.__module__ + "\n")
-		self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
+		if os.path.exists(model_path.replace("sm3","json")):  # .json model exists, prefer using it
+			self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
+			# Get XGBoost model from json
+			from xgboost import Booster
+			self.booster = Booster()
+			self.booster.load_model(model_path.replace("sm3","json"))
+			self.tokenizer = self.booster
+		else:
+			self.tokenizer, self.num_labels, self.cat_labels, self.multicol_dict, pos_lookup, self.freqs, self.conf_file_parser = joblib.load(model_path)
 		if "bert" in self.cat_labels:
 			try:
 				from flair_pos_tagger import FlairTagger
@@ -570,7 +585,7 @@ class RFTokenizer:
 
 	def train(self, train_file, lexicon_file=None, freq_file=None, test_prop=0.1, output_importances=False, dump_model=False,
 			  cross_val_test=False, output_errors=False, ablations=None, dump_transformed_data=False, do_shuffle=True, conf=None,
-			  bert=False, prune_lex=0.1):
+			  bert=False, prune_lex=0.1, json_model=True):
 		"""
 
 		:param train_file: File with segmentations to train on in one of the two formats described in make_prev_next()
@@ -937,8 +952,13 @@ class RFTokenizer:
 		if dump_model:
 			plain_dict_pos_lookup = {}
 			plain_dict_pos_lookup.update(pos_lookup)
-			joblib.dump((clf, num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]))#, compress=3)
-			print("o Dumped trained model to " + self.lang + ".sm" + str(sys.version_info[0]))
+			if json_model:
+				clf.save_model(self.lang + ".json")
+				joblib.dump((num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm3")
+				print("o Dumped trained model to " + self.lang + ".sm3 + " + self.lang + ".json")
+			else:
+				joblib.dump((clf, num_labels, cat_labels, multicol_dict, plain_dict_pos_lookup, freqs, conf_file_parser), self.lang + ".sm" + str(sys.version_info[0]))#, compress=3)
+				print("o Dumped trained model to " + self.lang + ".sm" + str(sys.version_info[0]))
 
 	def rf_tokenize(self, data, sep="|", indices=None, proba=False):
 		"""
@@ -1034,7 +1054,10 @@ class RFTokenizer:
 		data_x.columns = headers
 
 		data_x = multicol_transform(data_x,multicol_dict["columns"],multicol_dict["all_encoders_"])
-		prepped = data_x[cat_labels+num_labels].values
+		#prepped = data_x[cat_labels+num_labels].values
+		# Use DMatrix representation
+		# XGBoost is expecting all values as int, float or bool but we need the headers from pandas dataframe
+		prepped = xgb.DMatrix(data_x[cat_labels+num_labels].values, feature_names=cat_labels+num_labels)
 
 		if proba:
 			probas = tokenizer.predict_proba(prepped)
@@ -1042,6 +1065,9 @@ class RFTokenizer:
 			probs = np.split(np.array([p[1] for p in probas]), word_lengths)
 		else:
 			p = tokenizer.predict(prepped)
+			if not all([x == 0.0 or x == 1.0 for x in p]):  # Classifier returned float probabilities
+				probs = p
+				p = [int(p > 0.5) for p in probs]
 		p_words = np.split(p, word_lengths)
 		out_tokenized = []
 		out_probas = []
