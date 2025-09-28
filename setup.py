@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'rftokenizer',
   packages = find_packages(),
-  version = '2.3.2',
+  version = '2.4.0',
   description = 'A character-wise tokenizer for morphologically rich languages',
   author = 'Amir Zeldes',
   author_email = 'amir.zeldes@georgetown.edu',
@@ -12,7 +12,7 @@ setup(
   install_requires=["scikit-learn","numpy","pandas","xgboost==2.0.3","hyperopt","joblib"],
   license='Apache License, Version 2.0',
   download_url = 'https://github.com/amir-zeldes/RFTokenizer/releases/tag/v2.3.2',
-  keywords = ['NLP', 'tokenization', 'segmentation', 'morphology', 'morphological', 'Hebrew', 'Arabic', 'Coptic', 'word', 'splitting'],
+  keywords = ['NLP', 'tokenization', 'segmentation', 'morphology', 'morphological', 'Hebrew', 'Arabic', 'Coptic', 'word', 'splitting', 'tokenizer'],
   classifiers = ['Programming Language :: Python',
 'Programming Language :: Python :: 2',
 'Programming Language :: Python :: 3',

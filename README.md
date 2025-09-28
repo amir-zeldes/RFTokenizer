@@ -92,10 +92,10 @@ F-Score: 0.9848359525778881
 Prague Arabic Dependency Treebank (UD_Arabic-PADT, currently without BERT):
 
 ```
-Perfect word forms: 0.9846204866724703
-Precision: 0.9744331886155331
-Recall: 0.9874853343762221
-F-Score: 0.9809158451901132
+Perfect word forms: 0.984703395100112
+Precision: 0.974712865553518
+Recall: 0.9873875635510364
+F-Score: 0.9810092767982903
 ```
 
 Coptic Scriptorium (UD_Coptic-Scriptorium, currently without BERT):
@@ -125,7 +125,7 @@ Compatible with Python 2 or 3, but compiled models must be specific to Python 2 
 
 ### Command line
 
-To use the tokenizer, include the model file (e.g. `heb.sm3`) in the tokenizer's directory or in `models/`, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
+To use the tokenizer, include the model files (e.g. `heb.sm3` and `heb.json`) in the tokenizer's directory or in `models/`, then select it using `-m heb` and supply a text file to run segmentation on. The input file should have one word-form per line for segmentation.
 
 ```
 > python tokenize_rf.py -m heb example_in.txt > example_out.txt
@@ -179,7 +179,7 @@ Training is invoked like this:
 > python tokenize_rf.py -t -m <LANG> -c <CONF> -l <LEXICON> -f <FREQS> <TRAINING>
 ```
 
-This will produce `LANG.sm3`, the compiled model (or `.sm2` under Python 2). If `<CONF>` is not supplied, it is assumed to be called `<LANG>.conf`.
+This will produce `LANG.sm3` and `LANG.json`, the compiled model files (or `.sm2` under Python 2). If `<CONF>` is not supplied, it is assumed to be called `<LANG>.conf`.
 
 If you wish to use BERT features for classification you must *first* train a flair classifier using `flair_pos_tagger.py`, which trains on .conllu data, and name its model `<LANG>.seg`, which should be placed in `models/`. Then train RFTokenizer using the `--bert` option. **Important note**: the data used to train the BERT classifier must be disjoint from the data used to train RFTokenizer, or else it will produce over-reliance (RFTokenizer will learn that BERT is always right, since BERT magically predicts everything correctly, given that it has already seen this training data). Alternatively, you can use a k-fold training regime.
 
