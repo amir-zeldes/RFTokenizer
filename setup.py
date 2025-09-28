@@ -12,7 +12,7 @@ setup(
   install_requires=["scikit-learn","numpy","pandas","xgboost==2.0.3","hyperopt","joblib"],
   license='Apache License, Version 2.0',
   download_url = 'https://github.com/amir-zeldes/RFTokenizer/releases/tag/v2.3.2',
-  keywords = ['NLP', 'tokenization', 'segmentation', 'morphology', 'morphological', 'Hebrew', 'Arabic', 'Coptic', 'word', 'splitting'],
+  keywords = ['NLP', 'tokenization', 'segmentation', 'morphology', 'morphological', 'Hebrew', 'Arabic', 'Coptic', 'word', 'splitting', 'tokenizer'],
   classifiers = ['Programming Language :: Python',
 'Programming Language :: Python :: 2',
 'Programming Language :: Python :: 3',

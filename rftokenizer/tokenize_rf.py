@@ -9,7 +9,7 @@ for Morphologically Rich Languages (MRLs)
 
 __version__ = "2.4.0"
 __author__ = "Amir Zeldes"
-__copyright__ = "Copyright 2018-2024, Amir Zeldes"
+__copyright__ = "Copyright 2018-2025, Amir Zeldes"
 __license__ = "Apache 2.0"
 
 
