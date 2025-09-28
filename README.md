@@ -92,10 +92,10 @@ F-Score: 0.9848359525778881
 Prague Arabic Dependency Treebank (UD_Arabic-PADT, currently without BERT):
 
 ```
-Perfect word forms: 0.9846204866724703
-Precision: 0.9744331886155331
-Recall: 0.9874853343762221
-F-Score: 0.9809158451901132
+Perfect word forms: 0.984703395100112
+Precision: 0.974712865553518
+Recall: 0.9873875635510364
+F-Score: 0.9810092767982903
 ```
 
 Coptic Scriptorium (UD_Coptic-Scriptorium, currently without BERT):
