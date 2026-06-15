@@ -7,9 +7,9 @@ This module trains flair sequence labelers to predict POS and deprel for OTHER m
 
 from argparse import ArgumentParser
 import flair
-from flair.data import Corpus, Sentence
+from flair.data import Corpus, Sentence, Dictionary
 from flair.datasets import ColumnCorpus
-from flair.embeddings import OneHotEmbeddings, TransformerWordEmbeddings, StackedEmbeddings
+from flair.embeddings import OneHotEmbeddings, WordEmbeddings, CharacterEmbeddings, TransformerWordEmbeddings, StackedEmbeddings
 from flair.models import SequenceTagger
 import os, sys, io
 from glob import glob
@@ -26,85 +26,120 @@ seed(42)
 flair_version = int(flair.__version__.split(".")[1])
 
 script_dir = os.path.dirname(os.path.realpath(__file__)) + os.sep
-model_dir = script_dir + ".." + os.sep + "models_311" + os.sep
+model_dir = script_dir + ".." + os.sep + "models" + os.sep
 CONLLU_ROOT = "conllu" + os.sep  # Path to UD .conllu corpus repo directory
-CONLLU_ROOT = "C:\\Uni\\Corpora\\Hebrew\\UD_Hebrew-joint" + os.sep  # Path to UD .conllu corpus repo directory
 TARGET_FEATS = {}  # If using this tagger for specific features, specify them here
-lang_prefix = "heb"  # Prefix for the language name in the model, e.g. heb for Hebrew
+
 
 class FlairTagger:
 
-    def __init__(self, train=False, morph=False, seg=False):
+    def __init__(self, train=False, morph=False, seg=False, lang="heb"):
+        self.lang = lang  # Prefix for the language name in the model, e.g. heb for Hebrew
         if not train:
             if morph:
-                self.model = SequenceTagger.load(model_dir + lang_prefix + ".morph")
+                self.model = SequenceTagger.load(model_dir + lang + ".morph")
             elif seg:
                 model_dir = script_dir + "models" + os.sep
-                if not os.path.exists(model_dir + lang_prefix + ".seg"):
-                    sys.stderr.write("! Model file " + model_dir + lang_prefix + ".seg not found\n")
+                if not os.path.exists(model_dir + lang + ".seg"):
+                    sys.stderr.write("! Model file " + model_dir + lang + ".seg not found\n")
                     sys.stderr.write("! Attempting to download it... (this could take a while)\n")
-                    url = "https://gucorpling.org/amir/download/heb_models_v4/" + lang_prefix + ".seg"
-                    urlretrieve(url, model_dir + lang_prefix + ".seg")
+                    url = "https://gucorpling.org/amir/download/heb_models_v4/" + lang + ".seg"
+                    urlretrieve(url, model_dir + lang + ".seg")
                     sys.stderr.write("! Done!\n")
-                self.model = SequenceTagger.load(model_dir + lang_prefix + ".seg")
+                self.model = SequenceTagger.load(model_dir + lang + ".seg")
             else:
-                self.model = SequenceTagger.load(model_dir + lang_prefix + ".flair")
+                self.model = SequenceTagger.load(model_dir + lang + ".flair")
 
-    @staticmethod
-    def make_seg_data():
-        # Pre-determined prefixes and suffixes for Hebrew, can be changed for other language training
-        prefixes = {"ב","כ","מ","ל","ה",}
-        suffixes = {"ו","ה","י","ך","ם","ן","הם","הן","כם","כן","יו"}
-        def segs2tag(segs):
-            tag = "X"
-            if len(segs) == 2:
-                if segs[0] == "ו":
-                    tag = "W"
-                elif segs[0] in ["ש","כש"]:
-                    tag = "S"
-                elif segs[0] in prefixes:
-                    tag = "B"
-                if segs[1] in suffixes:
-                    tag += "Y"
-            elif len(segs) == 3:
-                if segs[0] == "ו":
-                    tag = "W"
-                elif segs[0] in ["ש","כש"]:
-                    tag = "S"
-                elif segs[0] in prefixes:
-                    tag = "B"
-                if segs[1] in ["ש","כש"]:
-                    tag += "S"
-                elif segs[1] in prefixes:
-                    tag += "B"
-                if segs[2] in suffixes:
-                    tag += "Y"
-            elif len(segs) > 3:
-                if segs[0] == "ו":
-                    tag = "W"
-                elif segs[0] in ["ש","כש"]:
-                    tag = "S"
-                if segs[1] in ["ש","כש"]:
-                    tag += "S"
-                elif segs[1] in prefixes:
-                    tag += "B"
-                if segs[2] in prefixes:
-                    tag += "B"
-                if segs[-1] in suffixes:
-                    tag += "Y"
-            if tag == "BS":
-                tag = "BB"  # מ+ש, כ+ש
-            elif tag == "WSY":  # ושעיקרה
-                tag = "WBY"
-            elif "XS" in tag:
+    def make_seg_data(self):
+        if self.lang == "heb":
+            # Pre-determined prefixes and suffixes for Hebrew, can be changed for other language training
+            prefixes = {"ב","כ","מ","ל","ה",}
+            suffixes = {"ו","ה","י","ך","ם","ן","הם","הן","כם","כן","יו"}
+            conjunctions = {"ש","כש"}
+            preprefixes = {"ו"}
+        elif self.lang == "cop":
+            prefixes = {"ⲡ","ⲡⲓ","ⲫ","ⲡⲁⲓ","ⲫⲁⲓ","ⲡⲉⲓ","ⲡⲉ","ⲧ","ϯ","ⲑ","ⲧⲁⲓ","ⲑⲁⲓ","ⲧⲉⲓ","ⲧⲉ","ⲛ","ⲙ","ⲛⲓ","ⲛⲁⲓ","ⲛⲉⲓ","ⲛⲉ","ⲟⲩ","ⲩ","ϩⲉⲛ","ϩⲁⲛ","ⲡⲉϥ","ⲡⲁ",""}
+            suffixes = {"ⲓ","ⲕ","ϥ","ⲥ","ⲧⲛ","ⲧⲉⲛ","ⲛⲧⲉⲧⲛ","ⲧⲉⲧⲉⲛ","ⲧⲉⲧⲛ"}
+            conjunctions = {"ש","כש"}
+            preprefixes = {"ו"}
+
+        def segs2tag(segs, tags=None):
+            if tags is None:
                 tag = "X"
-            return tag.replace("SS","S")
+                if len(segs) == 2:
+                    if segs[0] in preprefixes:
+                        tag = "W"
+                    elif segs[0] in conjunctions:
+                        tag = "S"
+                    elif segs[0] in prefixes:
+                        tag = "B"
+                    if segs[1] in suffixes:
+                        tag += "Y"
+                elif len(segs) == 3:
+                    if segs[0] in preprefixes:
+                        tag = "W"
+                    elif segs[0] in conjunctions:
+                        tag = "S"
+                    elif segs[0] in prefixes:
+                        tag = "B"
+                    if segs[1] in conjunctions:
+                        tag += "S"
+                    elif segs[1] in prefixes:
+                        tag += "B"
+                    if segs[2] in suffixes:
+                        tag += "Y"
+                elif len(segs) > 3:
+                    if segs[0] in preprefixes:
+                        tag = "W"
+                    elif segs[0] in conjunctions:
+                        tag = "S"
+                    if segs[1] in conjunctions:
+                        tag += "S"
+                    elif segs[1] in prefixes:
+                        tag += "B"
+                    if segs[2] in prefixes:
+                        tag += "B"
+                    if segs[-1] in suffixes:
+                        tag += "Y"
+                if tag == "BS":
+                    tag = "BB"  # מ+ש, כ+ש
+                elif tag == "WSY":  # ושעיקרה
+                    tag = "WBY"
+                elif "XS" in tag:
+                    tag = "X"
+                return tag.replace("SS","S")
+            else:
+                tag = []
+                if len(tags) == 1:
+                    return "_"
+                if segs[0] in ["ϫⲉ","ⲛϭⲓ","ⲛϫⲉ"]:
+                    tag.append("J")
+                if any([t in ["CCIRC","CFOC","CREL","CPRET"] for t in tags]):
+                    tag.append("C")
+                #if any([t.startswith("NEG") for t in tags]):
+                #    tag.append("N")
+                if any([t.startswith("A") and t not in ["ACAUS","ADV","ART"] for t in tags]):
+                    tag.append("A")
+                if any(["PPERS" in t for t in tags]):
+                    tag.append("S")
+                if any([t in ["ART","PDEM","PPOS"] for t in tags]):
+                    tag.append("D")
+                if any(["PREP" in t for t in tags]):
+                    tag.append("P")
+                if any(["PPERO" in t for t in tags]):
+                    tag.append("O")
+                if len(tag) > 4:
+                    return "X"  # Long sequence
+                if "".join(tag) in ["JO","JP","ASDP","JADP","CPO","ADPO","JASD","JCAS","CP","CSPO","CDP","CADO","JSO","SP","AO","JDP","DPO","ADO","JCD","CSP","JCSO","APO","CSD","JC","JASP","SD","CSDP","CAO","ASDO","SPO","CASP","JAP","JPO","JADO","DO","CAP","JAO","SDP","JSD","JCSD","JSPO","JCSP","CDPO","JAPO","JCA","JCO","JDO","SDO"]:
+                    return "Y"  # Rare tag
+                return "".join(tag) if len(tag) > 0 else "_"
 
-        def conllu2segs(conllu, target="affixes"):
+        def conllu2segs(conllu, target="affixes", limit=4, tags=False):
+            # param: limit - Maximum bound group length in units, discard sentences with longer groups
             super_length = 0
-            limit = 4  # Maximum bound group length in units, discard sentences with longer groups
             sents = []
             words = []
+            pos = []
             labels = []
             word = []
             max_len = 0
@@ -118,16 +153,21 @@ class FlairTagger:
                     else:
                         if super_length > 0:
                             word.append(fields[1])
+                            pos.append(fields[4])
                             super_length -= 1
                             if super_length == 0:
                                 words.append("".join(word))
                                 if target=="count":
                                     labels.append(str(len(word)))
                                 else:
-                                    labels.append(segs2tag(word))
+                                    if tags:
+                                        labels.append(segs2tag(word, pos))
+                                    else:
+                                        labels.append(segs2tag(word))
                                 if len(word) > max_len:
                                     max_len = len(word)
                                 word = []
+                                pos = []
                         else:
                             words.append(fields[1])
                             labels.append("O")
@@ -140,26 +180,31 @@ class FlairTagger:
                     labels = []
             return "\n\n".join(sents)
 
-        files = glob(CONLLU_ROOT + "seg" + os.sep + "*.conllu")
+        root = CONLLU_ROOT
+        if self.lang == "heb":
+            root = CONLLU_ROOT + "seg"
+        files = glob(root + os.sep + "*.conllu")
         data = ""
         for file_ in files:
-            if lang_prefix == "heb":
-                # For Hebrew a special affix scheme is preconfigured - adapt for other languages or use generic count
-                data += conllu2segs(io.open(file_, encoding="utf8").read(),target="affixes") + "\n\n"
+            if self.lang == "heb":
+                # For Hebrew, a special affix scheme is preconfigured - adapt for other languages or use generic count
+                data += conllu2segs(io.open(file_, encoding="utf8").read(),target="affixes", limit=4) + "\n\n"
+            elif self.lang == "cop":
+                # For Coptic, labels are based on POS tag sequences
+                data += conllu2segs(io.open(file_, encoding="utf8").read(), target="affixes", limit=8, tags=True) + "\n\n"
             else:
                 data += conllu2segs(io.open(file_,encoding="utf8").read(), target="count") + "\n\n"
         sents = data.strip().split("\n\n")
         sents = list(set(sents))
         shuffle(sents)
-        with io.open("tagger" + os.sep + lang_prefix + "_train_seg.txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_train_seg.txt", 'w', encoding="utf8",newline="\n") as f:
             f.write("\n\n".join(sents[:int(-len(sents)/10)]))
-        with io.open("tagger" + os.sep + lang_prefix + "_dev_seg.txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_dev_seg.txt", 'w', encoding="utf8",newline="\n") as f:
             f.write("\n\n".join(sents[int(-len(sents)/10):]))
-        with io.open("tagger" + os.sep + lang_prefix + "_test_seg.txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_test_seg.txt", 'w', encoding="utf8",newline="\n") as f:
             f.write("\n\n".join(sents[int(-len(sents)/10):]))
 
-    @staticmethod
-    def make_pos_data(tags=False):
+    def make_pos_data(self, tags=False):
         def filter_morph(feats):
             if feats == "_":
                 return "O"
@@ -217,11 +262,11 @@ class FlairTagger:
                 test += "\n".join(output)
             else:
                 train += "\n".join(output)
-        with io.open("tagger" + os.sep + lang_prefix + "_train"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_train"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
             f.write(train)
-        with io.open("tagger" + os.sep + lang_prefix + "_dev"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_dev"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
             f.write(dev)
-        with io.open("tagger" + os.sep + lang_prefix + "_test"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
+        with io.open("tagger" + os.sep + self.lang + "_test"+suff+".txt", 'w', encoding="utf8",newline="\n") as f:
             f.write(test)
 
     def train(self, cuda_safe=True, positional=True, tags=False, seg=False):
@@ -257,9 +302,9 @@ class FlairTagger:
 
         corpus: Corpus = ColumnCorpus(
             data_folder, columns,
-            train_file=lang_prefix + "_train"+suff+".txt",
-            test_file=lang_prefix + "_test"+suff+".txt",
-            dev_file=lang_prefix + "_dev"+suff+".txt",
+            train_file=self.lang + "_train"+suff+".txt",
+            test_file=self.lang + "_test"+suff+".txt",
+            dev_file=self.lang + "_dev"+suff+".txt",
         )
 
         # 2. what tag do we want to predict?
@@ -276,7 +321,10 @@ class FlairTagger:
 
         # 4. initialize embeddings
         # Set language specific transformer embeddings here
-        embeddings: TransformerWordEmbeddings = TransformerWordEmbeddings('onlplab/alephbert-base',)  # AlephBERT for Hebrew
+        if self.lang == "heb":
+            embeddings: TransformerWordEmbeddings = TransformerWordEmbeddings('onlplab/alephbert-base',)  # AlephBERT for Hebrew
+        else:
+            embeddings: TransformerWordEmbeddings = TransformerWordEmbeddings('lgessler/microbert-coptic-mx',)
         if positional:
             positions: OneHotEmbeddings = OneHotEmbeddings(corpus=corpus, field="super", embedding_length=5)
             if tags:
@@ -291,10 +339,17 @@ class FlairTagger:
             else:
                 stacked = embeddings
         else:
-            stacked = embeddings
+            if self.lang == "cop":
+                w2v: WordEmbeddings = WordEmbeddings(script_dir + os.sep + "coptic_50d_norm_and_group_sb.vec.gensim")
+                char: CharacterEmbeddings = CharacterEmbeddings(Dictionary.load("chars-large"))
+                stacked: StackedEmbeddings = StackedEmbeddings([embeddings, w2v, char])
+            else:
+                stacked = embeddings
 
         # 5. initialize sequence tagger
-        tagger: SequenceTagger = SequenceTagger(hidden_size=256,
+        hidden_size = 256 if self.lang == "heb" else 128
+
+        tagger: SequenceTagger = SequenceTagger(hidden_size=hidden_size,
                                                 embeddings=stacked,
                                                 tag_dictionary=tag_dictionary,
                                                 tag_type=tag_type,
@@ -450,6 +505,7 @@ if __name__ == "__main__":
     # python flair_pos_tagger.py --seg -i conllu
     p = ArgumentParser()
     p.add_argument("-m","--mode",choices=["train","predict"],default="predict")
+    p.add_argument("-l","--lang",default="heb",help="Language prefix")
     p.add_argument("-f","--file",default=None,help="Blank for training, blank predict for eval, or file to run predict on")
     p.add_argument("-p","--positional_embeddings",action="store_true",help="Whether to use positional embeddings within supertokens (MWTs)")
     p.add_argument("-t","--tag_embeddings",action="store_true",help="Whether to use POS tag embeddings for morphology prediction")
@@ -460,9 +516,9 @@ if __name__ == "__main__":
     opts = p.parse_args()
 
     if opts.mode == "train":
-        tagger = FlairTagger(train=True)
+        tagger = FlairTagger(train=True,lang=opts.lang)
         tagger.train(positional=opts.positional_embeddings, tags=opts.tag_embeddings, seg=opts.seg)
     else:
-        tagger = FlairTagger(train=False)
+        tagger = FlairTagger(train=False,lang=opts.lang)
         tagger.predict(in_format=opts.input_format, out_format=opts.output_format,
                 in_path=opts.file, seg=opts.seg)
