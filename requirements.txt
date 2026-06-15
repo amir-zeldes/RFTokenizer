@@ -1,7 +1,6 @@
-scikit-learn==1.3.2
-joblib==1.3.2
+scikit-learn
 numpy
-pandas==2.1.2
-xgboost==2.0.3
+pandas
+xgboost>=3.0.0
 hyperopt
 flair==0.13.0
